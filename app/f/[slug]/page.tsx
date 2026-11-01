@@ -1,9 +1,19 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useParams } from 'next/navigation';
-import { useSingleForm } from '@/features/forms/hooks/useForms';
-import type { FieldsResponse } from '@/types/api.types';
+import {
+  useSingleForm,
+  usePublishedFormQuery,
+  useSubmitFormMutation,
+} from '@/features/forms/hooks/useForms';
+import type {
+  FieldsResponse,
+  SectionResponse,
+  SingleForm,
+  FormSettingsResponse,
+  QuizSettingsResponse,
+} from '@/types/api.types';
 import { getSectionGridClass } from '@/features/builder/constants/layout.constants';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,6 +33,7 @@ import {
   UploadCloud,
   Loader2,
   FileQuestion,
+  RotateCcw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -72,14 +83,70 @@ function PublicFormSkeleton() {
   );
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function PublishedFormContent() {
   const params = useParams();
-  const formId = typeof params?.id === 'string' ? params.id : '';
+  const slugOrId =
+    typeof params?.slug === 'string'
+      ? params.slug
+      : typeof params?.id === 'string'
+      ? params.id
+      : '';
 
-  const { form, isLoading } = useSingleForm(formId);
+  const isUuid = UUID_REGEX.test(slugOrId);
+
+  // If slugOrId is a UUID, use direct single form API; otherwise use published form API by slug
+  const { data: publishedDraft, isLoading: isPublishedLoading } = usePublishedFormQuery(
+    !isUuid && slugOrId ? slugOrId : null
+  );
+  const { form: directForm, isLoading: isDirectLoading } = useSingleForm(
+    isUuid && slugOrId ? slugOrId : null
+  );
+
+  const { mutateAsync: submitForm, isPending: isSubmitting } = useSubmitFormMutation();
+
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+
+  // Normalize form data across both published draft version and direct form response
+  const form: SingleForm | null = useMemo(() => {
+    if (directForm) {
+      return directForm;
+    }
+
+    if (publishedDraft) {
+      const content = (publishedDraft.content || {}) as Record<string, unknown>;
+      const resolvedSections = (
+        Array.isArray(content.sections) ? content.sections : []
+      ) as SectionResponse[];
+      const resolvedFields = (
+        Array.isArray(content.fields) ? content.fields : []
+      ) as FieldsResponse[];
+
+      return {
+        id: publishedDraft.form_id || publishedDraft.id || slugOrId,
+        created_at: publishedDraft.created_at,
+        updated_at: publishedDraft.updated_at,
+        owner_id: null,
+        guest_session_id: null,
+        title: (content.title as string) || 'Published Form',
+        description: (content.description as string) || null,
+        form_type: ((content.form_type as string) || 'FORM') as SingleForm['form_type'],
+        status: 'PUBLISHED',
+        slug: slugOrId,
+        published_at: publishedDraft.published_at,
+        form_settings: (content.form_settings as FormSettingsResponse) || null,
+        quiz_settings: (content.quiz_settings as QuizSettingsResponse) || null,
+        sections: resolvedSections,
+        fields: resolvedFields,
+      };
+    }
+
+    return null;
+  }, [directForm, publishedDraft, slugOrId]);
+
+  const isLoading = isUuid ? isDirectLoading : isPublishedLoading;
 
   if (isLoading) {
     return <PublicFormSkeleton />;
@@ -129,17 +196,56 @@ function PublishedFormContent() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
+
     try {
-      // Simulate submission network call
-      await new Promise((resolve) => setTimeout(resolve, 600));
+      // Format answers to match OpenAPI SubmissionPayload & AnswerResponse schemas
+      const formattedAnswers = Object.entries(answers).map(([fieldId, val]) => {
+        let answer_text = '';
+        let answer_json: Record<string, unknown> = {};
+
+        if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
+          answer_text = String(val);
+          answer_json = { value: val };
+        } else if (Array.isArray(val)) {
+          answer_text = val.join(', ');
+          answer_json = { values: val };
+        } else if (val && typeof val === 'object') {
+          answer_text = JSON.stringify(val);
+          answer_json = val as Record<string, unknown>;
+        }
+
+        return {
+          field_id: fieldId,
+          answer_text,
+          answer_json,
+        };
+      });
+
+      await submitForm({
+        formId: form.id,
+        payload: {
+          respondent_metadata: {
+            submitted_at: new Date().toISOString(),
+            user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+            screen_resolution:
+              typeof window !== 'undefined'
+                ? `${window.screen.width}x${window.screen.height}`
+                : '',
+          },
+          answers: formattedAnswers,
+        },
+      });
+
       setIsSubmitted(true);
       toast.success('Your response has been recorded!');
     } catch {
-      toast.error('Failed to submit form. Please try again.');
-    } finally {
-      setIsSubmitting(false);
+      // Handled with toast in apiClient
     }
+  };
+
+  const handleResetForAnotherResponse = () => {
+    setAnswers({});
+    setIsSubmitted(false);
   };
 
   const renderField = (field: FieldsResponse) => {
@@ -307,9 +413,23 @@ function PublishedFormContent() {
             <h1 className="font-heading text-xl font-bold text-foreground">
               Thank You!
             </h1>
-            <p className="text-xs text-muted-foreground">
-              Your response has been successfully submitted and recorded.
+            <p className="text-xs text-muted-foreground whitespace-pre-line leading-relaxed">
+              {form.form_settings?.confirmation_message ||
+                'Your response has been successfully submitted and recorded.'}
             </p>
+            {form.form_settings?.allow_multiple_submission && (
+              <div className="pt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleResetForAnotherResponse}
+                  className="cursor-pointer text-xs gap-1.5 h-8 rounded-md"
+                >
+                  <RotateCcw className="size-3.5" />
+                  Submit Another Response
+                </Button>
+              </div>
+            )}
           </div>
         ) : (
           <form

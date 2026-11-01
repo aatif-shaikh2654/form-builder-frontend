@@ -159,21 +159,39 @@ export const FormCard: React.FC<FormCardProps> = ({ form, onDelete }) => {
             Builder
           </Button>
 
-          <Link
-            href={`/preview?id=${form.id}`}
-            target="_blank"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Button
-              variant="ghost"
-              size="sm"
-              className="cursor-pointer gap-1 text-xs text-muted-foreground hover:text-foreground h-7.5 px-2 rounded-md"
-              title="Open Live Form Preview in New Tab"
+          {form.status === 'PUBLISHED' ? (
+            <Link
+              href={`/f/${form.slug || form.id}`}
+              target="_blank"
+              onClick={(e) => e.stopPropagation()}
             >
-              <ExternalLink className="size-3" />
-              <span>Preview</span>
-            </Button>
-          </Link>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="cursor-pointer gap-1 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 hover:bg-emerald-500/10 h-7.5 px-2 rounded-md font-medium"
+                title="Open Live Published Form in New Tab"
+              >
+                <ExternalLink className="size-3" />
+                <span>Live Form</span>
+              </Button>
+            </Link>
+          ) : (
+            <Link
+              href={`/preview?id=${form.id}`}
+              target="_blank"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Button
+                variant="ghost"
+                size="sm"
+                className="cursor-pointer gap-1 text-xs text-muted-foreground hover:text-foreground h-7.5 px-2 rounded-md"
+                title="Open Live Form Preview in New Tab"
+              >
+                <ExternalLink className="size-3" />
+                <span>Preview</span>
+              </Button>
+            </Link>
+          )}
         </div>
 
         <Button

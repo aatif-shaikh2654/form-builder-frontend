@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { DateTimePicker } from '@/components/ui/date-time-picker';
-import { Save, CheckCircle2, Shield, Calendar, Loader2, Settings2 } from 'lucide-react';
+import { Save, CheckCircle2, Shield, Calendar, Loader2, Settings2, Globe, ExternalLink, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface FormSettingsViewProps {
@@ -29,6 +29,7 @@ export const FormSettingsView: React.FC<FormSettingsViewProps> = ({ onClose }) =
     setFormType,
     status,
     setStatus,
+    slug,
     formSettings,
     updateFormSettings,
   } = useBuilderStore();
@@ -195,6 +196,43 @@ export const FormSettingsView: React.FC<FormSettingsViewProps> = ({ onClose }) =
                 ))}
               </div>
             </div>
+
+            {status === 'PUBLISHED' && (slug || formId) && (
+              <div className="flex items-center justify-between p-2.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                <div className="flex items-center gap-1.5 truncate">
+                  <Globe className="size-3.5 shrink-0" />
+                  <span className="font-mono text-xs truncate">
+                    /f/{slug || formId}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      const fullUrl = `${window.location.origin}/f/${slug || formId}`;
+                      navigator.clipboard.writeText(fullUrl);
+                      toast.success('Live URL copied to clipboard');
+                    }}
+                    className="h-7 px-2 text-xs cursor-pointer gap-1"
+                  >
+                    <Copy className="size-3" />
+                    Copy
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.open(`/f/${slug || formId}`, '_blank')}
+                    className="h-7 px-2 text-xs border-emerald-500/30 cursor-pointer gap-1"
+                  >
+                    <ExternalLink className="size-3" />
+                    Open
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

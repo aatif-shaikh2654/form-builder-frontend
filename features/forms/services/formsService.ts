@@ -17,21 +17,38 @@ import type {
   SaveFormPayload,
   GetFormsParams,
   PaginatedFormsResponse,
+  DraftFormType,
+  SubmissionPayload,
+  APIResponse,
 } from '@/types/api.types';
 
 export const formsService = {
   /**
-   * GET /api/v1/form/all - Fetch forms from backend with optional query params
+   * GET /api/v1/form/all - Fetch forms from backend with required page and limit query params
    */
   async getAllForms(params?: GetFormsParams): Promise<PaginatedFormsResponse> {
-    const raw = await clientHttp.get<PaginatedFormsResponse | FormResponse[]>('/form/all', { params });
+    const queryParams: Record<string, unknown> = {
+      page: params?.page ?? 1,
+      limit: params?.limit ?? 12,
+    };
+
+    if (params?.search && params.search.trim()) {
+      queryParams.search = params.search.trim();
+    }
+    if (params?.form_type && params.form_type !== 'ALL') {
+      queryParams.form_type = params.form_type;
+    }
+
+    const raw = await clientHttp.get<PaginatedFormsResponse | FormResponse[]>('/form/all', {
+      params: queryParams,
+    });
 
     if (Array.isArray(raw)) {
       return {
         items: raw,
         stats: null,
-        page: 1,
-        limit: raw.length,
+        page: (queryParams.page as number) || 1,
+        limit: (queryParams.limit as number) || raw.length,
         total: raw.length,
         total_pages: 1,
       };
@@ -39,8 +56,8 @@ export const formsService = {
 
     const items = Array.isArray(raw?.items) ? raw.items : [];
     const stats = raw?.stats ?? null;
-    const page = raw?.page ?? params?.page ?? 1;
-    const limit = raw?.limit ?? params?.limit ?? 12;
+    const page = raw?.page ?? (queryParams.page as number) ?? 1;
+    const limit = raw?.limit ?? (queryParams.limit as number) ?? 12;
     const total = raw?.total ?? items.length;
 
     let total_pages = raw?.total_pages;
@@ -73,10 +90,31 @@ export const formsService = {
   },
 
   /**
+   * GET /api/v1/form/{form_id}/get-draft - Fetch latest draft version from form versioning
+   */
+  getDraft(formId: string): Promise<DraftFormType> {
+    return clientHttp.get<DraftFormType>(`/form/${formId}/get-draft`);
+  },
+
+  /**
    * POST /api/v1/form/{form_id}/publish - Publish form live
    */
   publishForm(formId: string): Promise<FormResponse> {
     return clientHttp.post<FormResponse>(`/form/${formId}/publish`);
+  },
+
+  /**
+   * GET /api/v1/form/{slug}/form - Fetch published form version by unique slug
+   */
+  getPublishedForm(slug: string): Promise<DraftFormType> {
+    return clientHttp.get<DraftFormType>(`/form/${slug}/form`);
+  },
+
+  /**
+   * POST /api/v1/form/{form_id}/submit - Submit respondent answers for a form
+   */
+  submitForm(formId: string, payload: SubmissionPayload): Promise<APIResponse> {
+    return clientHttp.post<APIResponse>(`/form/${formId}/submit`, payload);
   },
 
   /**

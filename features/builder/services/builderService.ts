@@ -1,8 +1,14 @@
 import { formsService } from '@/features/forms/services/formsService';
-import type { CreateFormPayload, EditFormPayload } from '@/types/api.types';
+import type { CreateFormPayload, EditFormPayload, SaveFormPayload } from '@/types/api.types';
 
 export const builderService = {
-  saveDraft: (formId: string, payload: EditFormPayload) =>
+  saveDraft: (formId: string, payload: SaveFormPayload) =>
+    formsService.saveDraft(formId, payload),
+
+  getDraft: (formId: string) =>
+    formsService.getDraft(formId),
+
+  editMetadata: (formId: string, payload: EditFormPayload) =>
     formsService.editForm(formId, payload),
 
   createForm: (payload: CreateFormPayload) =>
@@ -12,5 +18,5 @@ export const builderService = {
     formsService.getSingleForm(formId),
 
   publishForm: (formId: string) =>
-    formsService.editForm(formId, { status: 'PUBLISHED' }),
+    formsService.publishForm(formId),
 };

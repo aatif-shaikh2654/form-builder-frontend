@@ -21,6 +21,8 @@ import type {
   SaveFormPayload,
   GetFormsParams,
   PaginatedFormsResponse,
+  SubmissionPayload,
+  DraftFormType,
 } from '@/types/api.types';
 import { toast } from 'sonner';
 
@@ -32,6 +34,9 @@ import {
   FORM_MESSAGES,
 } from '../constants/forms.constants';
 import { useBuilderStore } from '@/features/builder/store/builderStore';
+
+export const formDraftQueryKey = (id: string) => ['forms', 'draft', id] as const;
+export const formPublishedQueryKey = (slug: string) => ['forms', 'published', slug] as const;
 
 export { FORMS_QUERY_KEY, formDetailQueryKey, FORMS_STALE_TIME, FORMS_GC_TIME, FORM_MESSAGES };
 
@@ -199,6 +204,56 @@ export function usePublishFormMutation(formId?: string | null) {
     mutationFn: (targetId: string) => formsService.publishForm(targetId),
     onSuccess: async (_, targetId) => {
       await syncSingleFormAndAllForms(queryClient, targetId || formId);
+    },
+  });
+}
+
+/**
+ * useDraftFormQuery - GET /api/v1/form/{form_id}/get-draft
+ * Fetches latest draft version of the form from form versioning
+ */
+export function useDraftFormQuery(formId: string | null) {
+  return useQuery({
+    queryKey: formDraftQueryKey(formId || ''),
+    queryFn: () => formsService.getDraft(formId!),
+    enabled: Boolean(formId),
+    staleTime: FORMS_STALE_TIME,
+    gcTime: FORMS_GC_TIME,
+  });
+}
+
+/**
+ * usePublishedFormQuery - GET /api/v1/form/{slug}/form
+ * Fetches published form version by public slug
+ */
+export function usePublishedFormQuery(slug: string | null) {
+  return useQuery({
+    queryKey: formPublishedQueryKey(slug || ''),
+    queryFn: () => formsService.getPublishedForm(slug!),
+    enabled: Boolean(slug),
+    staleTime: FORMS_STALE_TIME,
+    gcTime: FORMS_GC_TIME,
+  });
+}
+
+/**
+ * useSubmitFormMutation - POST /api/v1/form/{form_id}/submit
+ * Submits respondent responses for a live form
+ */
+export function useSubmitFormMutation(formId?: string | null) {
+  return useMutation({
+    mutationFn: ({
+      formId: targetId,
+      payload,
+    }: {
+      formId?: string;
+      payload: SubmissionPayload;
+    }) => {
+      const activeId = targetId || formId;
+      if (!activeId) {
+        throw new Error('Form ID is required for submission');
+      }
+      return formsService.submitForm(activeId, payload);
     },
   });
 }
@@ -438,6 +493,7 @@ export function useSingleForm(formId: string | null) {
   const addFieldMutation = useAddFieldMutation(formId);
   const updateFieldMutation = useUpdateFieldMutation(formId);
   const deleteFieldMutation = useDeleteFieldMutation(formId);
+  const submitMutation = useSubmitFormMutation(formId);
 
   return {
     form: query.data,
@@ -448,6 +504,8 @@ export function useSingleForm(formId: string | null) {
     isSavingDraft: saveDraftMutation.isPending,
     publishForm: publishMutation.mutateAsync,
     isPublishing: publishMutation.isPending,
+    submitForm: submitMutation.mutateAsync,
+    isSubmitting: submitMutation.isPending,
     updateSettings: updateSettingsMutation.mutateAsync,
     isUpdatingSettings: updateSettingsMutation.isPending,
     updateQuizSettings: updateQuizSettingsMutation.mutateAsync,

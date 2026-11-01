@@ -69,9 +69,21 @@ export interface RefreshTokenPayload {
   refresh_token: string;
 }
 
-export interface SessionData {
-  user_id: string | null;
+export interface GuestUser {
   session_token: string | null;
+  expires_at: string | null;
+}
+
+export interface GetGuestSessionResponse {
+  success: boolean;
+  message: string;
+  data: GuestUser;
+}
+
+export interface SessionData {
+  user_id?: string | null;
+  session_token: string | null;
+  expires_at?: string | null;
 }
 
 // ----------------- Field Models -----------------
@@ -263,6 +275,82 @@ export interface SaveFormPayload {
   fields: FieldsResponse[];
 }
 
+export interface SaveFormResponse {
+  success: boolean;
+  message: string;
+  data: SingleForm;
+}
+
+export interface PublishFormResponse {
+  success: boolean;
+  message: string;
+  data: FormResponse;
+}
+
+// ----------------- Form Versioning Models -----------------
+
+export interface DraftFormType {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  form_id: string;
+  version_number: number;
+  content: Record<string, unknown>;
+  published_at: string | null;
+  published_by_id: string | null;
+}
+
+export interface DraftFormResponse {
+  success: boolean;
+  message: string;
+  data: DraftFormType;
+}
+
+export interface GetPublishedFormResponse {
+  success: boolean;
+  message: string;
+  data: DraftFormType;
+}
+
+// ----------------- Submission Models -----------------
+
+export interface AnswerResponse {
+  field_id: string;
+  answer_text: string;
+  answer_json: Record<string, unknown>;
+}
+
+export interface SubmissionPayload {
+  respondent_metadata: Record<string, unknown>;
+  answers: AnswerResponse[];
+}
+
+// ----------------- Query & Stats Models -----------------
+
+export interface StatsResponse {
+  total_forms?: number | null;
+  published?: number | null;
+  drafts?: number | null;
+  quizes?: number | null;
+}
+
+export type FormStatsResponse = StatsResponse;
+
+export interface GetAllFormQueryResponse {
+  items: FormResponse[];
+  stats?: StatsResponse | null;
+  page?: number | null;
+  limit?: number | null;
+  total?: number | null;
+  total_pages?: number | null;
+}
+
+export interface GetAllFormsResponse {
+  success: boolean;
+  message: string;
+  data: GetAllFormQueryResponse;
+}
+
 export interface GetFormsParams {
   page?: number;
   limit?: number;
@@ -270,20 +358,14 @@ export interface GetFormsParams {
   form_type?: FormType | 'ALL';
 }
 
-export interface FormStatsResponse {
-  total_forms?: number;
-  published?: number;
-  drafts?: number;
-  quizes?: number;
-}
-
 export interface PaginatedFormsResponse {
   items: FormResponse[];
-  stats?: FormStatsResponse | null;
+  stats?: StatsResponse | null;
   page?: number | null;
   limit?: number | null;
   total?: number | null;
   total_pages?: number | null;
 }
+
 
 

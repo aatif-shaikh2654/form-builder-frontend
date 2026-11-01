@@ -34,6 +34,7 @@ export const BuilderToolbar: React.FC = () => {
     formType,
     status,
     setStatus,
+    slug,
     activeBuilderTab,
     setActiveBuilderTab,
     activeDrawer,
@@ -227,15 +228,17 @@ export const BuilderToolbar: React.FC = () => {
         return;
       }
 
-      await publishForm(currentFormId);
+      const published = await publishForm(currentFormId);
       setStatus('PUBLISHED');
       markSaved();
+
+      const liveSlug = published?.slug || useBuilderStore.getState().slug || slug || currentFormId;
 
       toast.success('Form published live!', {
         description: 'Your form is ready for respondents with no app header.',
         action: {
           label: 'View Live Form',
-          onClick: () => window.open(`/f/${currentFormId}`, '_blank'),
+          onClick: () => window.open(`/f/${liveSlug}`, '_blank'),
         },
       });
     } catch (err: unknown) {
@@ -321,6 +324,19 @@ export const BuilderToolbar: React.FC = () => {
             >
               {status}
             </span>
+
+            {status === 'PUBLISHED' && (slug || formId) && (
+              <a
+                href={`/f/${slug || formId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/20 transition-colors"
+                title={`Live Published Form: /f/${slug || formId}`}
+              >
+                <ExternalLink className="size-2.5" />
+                <span>/f/{slug || formId}</span>
+              </a>
+            )}
 
             {/* Unsaved vs Saved state indicator */}
             {isDirty ? (
