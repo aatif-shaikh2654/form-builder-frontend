@@ -6,7 +6,8 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { useUser } from '@/context/UserContext';
 import { UserProfileBadge } from '@/features/user/components/UserProfileBadge';
 import { Sparkles, LayoutGrid } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { cn } from 'cn';
 
 function HeaderAuthLinks() {
   const pathname = usePathname();
@@ -25,22 +26,23 @@ function HeaderAuthLinks() {
 
   return (
     <div className="flex items-center gap-2">
-      <Link href={loginHref}>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="cursor-pointer text-xs font-medium h-8 rounded-md"
-        >
-          Sign In
-        </Button>
+      <Link
+        href={loginHref}
+        className={cn(
+          buttonVariants({ variant: 'ghost', size: 'sm' }),
+          'cursor-pointer text-xs font-medium h-8 rounded-md'
+        )}
+      >
+        Sign In
       </Link>
-      <Link href={signupHref}>
-        <Button
-          size="sm"
-          className="cursor-pointer text-xs font-semibold h-8 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground"
-        >
-          Get Started
-        </Button>
+      <Link
+        href={signupHref}
+        className={cn(
+          buttonVariants({ size: 'sm' }),
+          'cursor-pointer text-xs font-semibold h-8 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground'
+        )}
+      >
+        Get Started
       </Link>
     </div>
   );
@@ -106,22 +108,23 @@ export const Header: React.FC = () => {
             <Suspense
               fallback={
                 <div className="flex items-center gap-2">
-                  <Link href="/login">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="cursor-pointer text-xs font-medium h-8 rounded-md"
-                    >
-                      Sign In
-                    </Button>
+                  <Link
+                    href="/login"
+                    className={cn(
+                      buttonVariants({ variant: 'ghost', size: 'sm' }),
+                      'cursor-pointer text-xs font-medium h-8 rounded-md'
+                    )}
+                  >
+                    Sign In
                   </Link>
-                  <Link href="/signup">
-                    <Button
-                      size="sm"
-                      className="cursor-pointer text-xs font-semibold h-8 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground"
-                    >
-                      Get Started
-                    </Button>
+                  <Link
+                    href="/signup"
+                    className={cn(
+                      buttonVariants({ size: 'sm' }),
+                      'cursor-pointer text-xs font-semibold h-8 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground'
+                    )}
+                  >
+                    Get Started
                   </Link>
                 </div>
               }

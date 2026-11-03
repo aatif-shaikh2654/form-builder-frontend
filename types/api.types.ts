@@ -97,6 +97,7 @@ export interface FieldsResponse {
   field_type: FieldType;
   placeholder: string | null;
   is_required: boolean;
+  is_multiple?: boolean | null;
   position: number;
   validation_rules: Record<string, unknown>;
   default_values: Record<string, unknown>;
@@ -114,6 +115,7 @@ export interface AddFieldPayload {
   field_type: FieldType;
   placeholder?: string | null;
   is_required: boolean;
+  is_multiple?: boolean | null;
   position: number;
   validation_rules: Record<string, unknown>;
   default_values: Record<string, unknown>;
@@ -129,6 +131,7 @@ export interface EditFieldPayload {
   field_type?: FieldType | null;
   placeholder?: string | null;
   is_required?: boolean | null;
+  is_multiple?: boolean | null;
   position?: number | null;
   validation_rules?: Record<string, unknown> | null;
   default_values?: Record<string, unknown> | null;
@@ -235,6 +238,9 @@ export interface FormResponse {
   status: FormStatus;
   slug: string | null;
   published_at: string | null;
+  current_published_version_id?: string | null;
+  published_version?: number | null;
+  draft_version?: number | null;
 }
 
 export interface SingleForm {
@@ -249,6 +255,9 @@ export interface SingleForm {
   status: FormStatus;
   slug: string | null;
   published_at: string | null;
+  current_published_version_id?: string | null;
+  published_version?: number | null;
+  draft_version?: number | null;
   form_settings?: FormSettingsResponse | null;
   quiz_settings?: QuizSettingsResponse | null;
   sections: SectionResponse[];
@@ -316,8 +325,8 @@ export interface GetPublishedFormResponse {
 
 export interface AnswerResponse {
   field_id: string;
-  answer_text: string;
-  answer_json: Record<string, unknown>;
+  answer_text?: string | null;
+  answer_json?: Record<string, unknown> | unknown[] | null;
 }
 
 export interface SubmissionPayload {

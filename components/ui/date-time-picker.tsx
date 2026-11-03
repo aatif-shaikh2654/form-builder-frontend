@@ -29,7 +29,7 @@ export interface DateTimePickerProps {
   clearable?: boolean;
   minDate?: Date;
   maxDate?: Date;
-  dateFormat?: string; // Display format, defaults to 'PPP, p' (e.g. Oct 25, 2026, 2:30 PM)
+  dateFormat?: string; // Display format, defaults to 'PP, p' (e.g. Nov 21, 2026, 12:00 PM)
 }
 
 const HOURS_12 = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
@@ -45,7 +45,7 @@ export function DateTimePicker({
   clearable = true,
   minDate,
   maxDate,
-  dateFormat = 'PPP, p',
+  dateFormat = 'PP, p',
 }: DateTimePickerProps) {
   const [open, setOpen] = React.useState(false);
 
@@ -115,6 +115,7 @@ export function DateTimePicker({
 
   const handleClear = (e: React.MouseEvent) => {
     e.stopPropagation();
+    e.preventDefault();
     onChange?.('', undefined);
   };
 
@@ -150,52 +151,58 @@ export function DateTimePicker({
         setOpen(nextOpen);
       }}
     >
-      <PopoverTrigger
-        id={id}
-        disabled={disabled}
-        className={cn(
-          'w-full cursor-pointer flex items-center justify-between text-left font-normal h-10 px-3 py-2 text-[13px] rounded-md border border-input bg-card hover:bg-accent/40 focus:outline-none focus:ring-1 focus:ring-ring transition-colors shadow-2xs',
-          !parsedDate && 'text-muted-foreground',
-          disabled && 'opacity-50 cursor-not-allowed pointer-events-none',
-          className
-        )}
-      >
-        <span className="flex items-center gap-2 truncate">
-          <CalendarIcon className="size-4 shrink-0 text-muted-foreground" />
-          <span className="truncate">
-            {parsedDate ? format(parsedDate, dateFormat) : placeholder}
+      <div className="relative flex items-center w-full">
+        <PopoverTrigger
+          id={id}
+          disabled={disabled}
+          className={cn(
+            'w-full cursor-pointer flex items-center justify-between text-left font-normal h-10 px-3 py-2 text-[13px] rounded-md border border-input bg-card hover:bg-accent/40 focus:outline-none focus:ring-1 focus:ring-ring transition-colors shadow-2xs',
+            clearable && parsedDate && !disabled && 'pr-9',
+            !parsedDate && 'text-muted-foreground',
+            disabled && 'opacity-50 cursor-not-allowed pointer-events-none',
+            className
+          )}
+        >
+          <span className="flex items-center gap-2 truncate">
+            <CalendarIcon className="size-4 shrink-0 text-muted-foreground" />
+            <span className="truncate">
+              {parsedDate ? format(parsedDate, dateFormat) : placeholder}
+            </span>
           </span>
-        </span>
+        </PopoverTrigger>
         {clearable && parsedDate && !disabled && (
           <button
             type="button"
             onClick={handleClear}
-            className="cursor-pointer ml-1 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+            className="cursor-pointer absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0 z-10"
             title="Clear date & time"
             aria-label="Clear date & time"
           >
             <X className="size-3.5" />
           </button>
         )}
-      </PopoverTrigger>
-      <PopoverContent className="w-auto p-0 z-50 bg-popover" align="start">
+      </div>
+      <PopoverContent
+        className="w-[304px] p-0 z-50 bg-popover border border-border shadow-lg rounded-lg overflow-hidden"
+        align="start"
+      >
         {/* Header Summary */}
-        <div className="p-3 border-b border-border flex items-center justify-between bg-muted/20">
+        <div className="px-3.5 py-2.5 border-b border-border flex items-center justify-between bg-muted/20">
           <div className="space-y-0.5">
             <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider block">
               Date &amp; Time
             </span>
             <span className="text-xs font-semibold text-foreground">
-              {parsedDate ? format(parsedDate, 'PPP, p') : 'No date selected'}
+              {parsedDate ? format(parsedDate, dateFormat) : 'No date selected'}
             </span>
           </div>
-          <div className="flex gap-1">
+          <div className="flex gap-1.5">
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => handleQuickPreset('now')}
-              className="cursor-pointer text-[10px] h-6 px-1.5"
+              className="cursor-pointer text-[11px] font-medium h-6.5 px-2 rounded-md hover:bg-accent border-border"
             >
               Now
             </Button>
@@ -204,7 +211,7 @@ export function DateTimePicker({
               variant="outline"
               size="sm"
               onClick={() => handleQuickPreset('tomorrow-9am')}
-              className="cursor-pointer text-[10px] h-6 px-1.5"
+              className="cursor-pointer text-[11px] font-medium h-6.5 px-2 rounded-md hover:bg-accent border-border"
             >
               Tomorrow
             </Button>
@@ -212,7 +219,7 @@ export function DateTimePicker({
         </div>
 
         {/* Calendar Day Picker */}
-        <div className="p-1">
+        <div className="p-3 pb-1 flex justify-center">
           <Calendar
             mode="single"
             selected={parsedDate}
@@ -227,20 +234,21 @@ export function DateTimePicker({
         </div>
 
         {/* Time Selector Footer */}
-        <div className="p-3 border-t border-border bg-muted/10 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-foreground flex items-center gap-1.5">
-              <Clock className="size-3.5 text-primary" />
-              Time
+        <div className="px-3.5 py-3 border-t border-border bg-muted/10 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-medium text-foreground flex items-center gap-1.5 shrink-0">
+              <Clock className="size-3.5 text-primary shrink-0" />
+              <span>Time</span>
             </span>
-            <div className="flex items-center gap-1">
+
+            <div className="flex items-center gap-1.5">
               {/* Hour Select */}
               <Select
                 modal={false}
                 value={currentHour}
                 onValueChange={(val) => handleTimeChange(val ?? undefined, undefined, undefined)}
               >
-                <SelectTrigger size="sm" className="w-16 text-xs font-mono h-7 bg-background">
+                <SelectTrigger size="sm" className="w-[58px] h-8 text-xs font-mono px-2 bg-background justify-between">
                   <SelectValue placeholder="HH" />
                 </SelectTrigger>
                 <SelectContent portal={false} side="top" align="center" className="min-w-20 w-20 max-h-48 z-50">
@@ -252,7 +260,7 @@ export function DateTimePicker({
                 </SelectContent>
               </Select>
 
-              <span className="text-muted-foreground font-bold">:</span>
+              <span className="text-muted-foreground font-bold text-xs select-none px-0.5">:</span>
 
               {/* Minute Select */}
               <Select
@@ -260,7 +268,7 @@ export function DateTimePicker({
                 value={currentMinute}
                 onValueChange={(val) => handleTimeChange(undefined, val ?? undefined, undefined)}
               >
-                <SelectTrigger size="sm" className="w-16 text-xs font-mono h-7 bg-background">
+                <SelectTrigger size="sm" className="w-[58px] h-8 text-xs font-mono px-2 bg-background justify-between">
                   <SelectValue placeholder="MM" />
                 </SelectTrigger>
                 <SelectContent portal={false} side="top" align="center" className="min-w-20 w-20 max-h-48 z-50">
@@ -278,7 +286,7 @@ export function DateTimePicker({
                 value={currentPeriod}
                 onValueChange={(val) => handleTimeChange(undefined, undefined, val ?? undefined)}
               >
-                <SelectTrigger size="sm" className="w-16 text-xs font-semibold h-7 bg-background">
+                <SelectTrigger size="sm" className="w-[64px] h-8 text-xs font-semibold px-2 bg-background justify-between">
                   <SelectValue placeholder="Period" />
                 </SelectTrigger>
                 <SelectContent portal={false} side="top" align="center" className="min-w-20 w-20 z-50">
@@ -294,28 +302,30 @@ export function DateTimePicker({
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center justify-between pt-1 border-t border-border/60">
+          <div className="flex items-center justify-between pt-2 border-t border-border">
             {clearable && parsedDate ? (
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
                 onClick={handleClear}
-                className="cursor-pointer text-xs h-7 px-2 text-muted-foreground hover:text-destructive"
+                className="cursor-pointer text-xs h-7.5 px-2.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md"
               >
                 Clear
               </Button>
             ) : (
-              <div />
+              <span className="text-[11px] text-muted-foreground pl-0.5">
+                Select date &amp; time
+              </span>
             )}
             <Button
               type="button"
               size="sm"
               onClick={() => setOpen(false)}
-              className="cursor-pointer text-xs h-7 px-3 bg-primary text-primary-foreground font-medium gap-1"
+              className="cursor-pointer text-xs h-7.5 px-3.5 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-md gap-1.5 shadow-2xs"
             >
               <Check className="size-3" />
-              Done
+              <span>Done</span>
             </Button>
           </div>
         </div>

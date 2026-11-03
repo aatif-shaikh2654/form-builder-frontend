@@ -113,6 +113,7 @@ export function createDefaultField(
     field_type: type,
     placeholder: DEFAULT_FIELD_PLACEHOLDERS[type] || null,
     is_required: false,
+    is_multiple: type === 'CHECKBOX',
     position,
     validation_rules: {},
     default_values: {},

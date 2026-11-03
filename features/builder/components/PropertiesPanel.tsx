@@ -230,6 +230,34 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
           </div>
         )}
 
+        {/* Multiple selection / multiple files switch */}
+        {(selectedField.field_type === 'FILE_UPLOAD' ||
+          selectedField.field_type === 'DROPDOWN' ||
+          selectedField.field_type === 'CHECKBOX' ||
+          selectedField.field_type === 'MULTIPLE_CHOICE') && (
+          <div className="flex items-center justify-between pt-2 border-t border-border">
+            <div className="space-y-0.5">
+              <Label htmlFor="field-multiple" className="text-xs font-medium cursor-pointer">
+                {selectedField.field_type === 'FILE_UPLOAD'
+                  ? 'Allow Multiple Files'
+                  : 'Allow Multiple Selections'}
+              </Label>
+              <p className="text-[10px] text-muted-foreground">
+                {selectedField.field_type === 'FILE_UPLOAD'
+                  ? 'Respondents can upload more than one file'
+                  : 'Respondents can choose more than one option'}
+              </p>
+            </div>
+            <Switch
+              id="field-multiple"
+              checked={Boolean(selectedField.is_multiple)}
+              onCheckedChange={(checked) => {
+                updateField(selectedField.id, { is_multiple: checked });
+              }}
+            />
+          </div>
+        )}
+
         {/* Required switch */}
         {selectedField.field_type !== 'SECTION_HEADING' && (
           <div className="flex items-center justify-between pt-2 border-t border-border">

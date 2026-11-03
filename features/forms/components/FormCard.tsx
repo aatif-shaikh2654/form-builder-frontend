@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { FormResponse } from '@/types/api.types';
@@ -17,7 +17,10 @@ import {
   Trash2,
   Globe,
   ExternalLink,
+  Copy,
+  Check,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useBuilderStore } from '@/features/builder/store/builderStore';
 import { useConfirmationStore } from '@/store/useConfirmationStore';
 import { formsService } from '../services/formsService';
@@ -34,6 +37,17 @@ export const FormCard: React.FC<FormCardProps> = ({ form, onDelete }) => {
   const queryClient = useQueryClient();
   const { loadForm, setTitle, setDescription, setFormType, setStatus, setActiveBuilderTab } = useBuilderStore();
   const confirm = useConfirmationStore((s) => s.confirm);
+  const [isCopied, setIsCopied] = useState(false);
+
+  const handleCopyLiveLink = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const target = form.slug || form.id;
+    const fullUrl = `${window.location.origin}/f/${target}`;
+    navigator.clipboard.writeText(fullUrl);
+    setIsCopied(true);
+    toast.success('Live form link copied to clipboard!');
+    setTimeout(() => setIsCopied(false), 2000);
+  };
 
   const handleEdit = async (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -160,21 +174,42 @@ export const FormCard: React.FC<FormCardProps> = ({ form, onDelete }) => {
           </Button>
 
           {form.status === 'PUBLISHED' ? (
-            <Link
-              href={`/f/${form.slug || form.id}`}
-              target="_blank"
-              onClick={(e) => e.stopPropagation()}
-            >
+            <div className="flex items-center gap-1">
+              <Link
+                href={`/f/${form.slug || form.id}`}
+                target="_blank"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="cursor-pointer gap-1 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 hover:bg-emerald-500/10 h-7.5 px-2 rounded-md font-medium"
+                  title="Open Live Published Form in New Tab"
+                >
+                  <ExternalLink className="size-3" />
+                  <span>Live Form</span>
+                </Button>
+              </Link>
               <Button
                 variant="ghost"
                 size="sm"
-                className="cursor-pointer gap-1 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 hover:bg-emerald-500/10 h-7.5 px-2 rounded-md font-medium"
-                title="Open Live Published Form in New Tab"
+                onClick={handleCopyLiveLink}
+                className="cursor-pointer gap-1 text-xs text-muted-foreground hover:text-foreground h-7.5 px-2 rounded-md"
+                title="Copy live link to clipboard"
               >
-                <ExternalLink className="size-3" />
-                <span>Live Form</span>
+                {isCopied ? (
+                  <>
+                    <Check className="size-3 text-emerald-500" />
+                    <span className="text-emerald-600 dark:text-emerald-400">Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="size-3" />
+                    <span>Copy</span>
+                  </>
+                )}
               </Button>
-            </Link>
+            </div>
           ) : (
             <Link
               href={`/preview?id=${form.id}`}

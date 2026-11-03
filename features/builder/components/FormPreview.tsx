@@ -18,6 +18,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { DatePicker, TimePicker, DateTimePicker } from '@/components/common';
+import { MultiSelect } from '@/components/ui/multi-select';
+import { FileUploadField } from '@/components/ui/file-uploader';
 import { toast } from 'sonner';
 import {
   ArrowLeft,
@@ -307,26 +309,37 @@ export const FormPreview: React.FC = () => {
               rules={{
                 required: field.is_required ? `${field.label} is required` : false,
               }}
-              render={({ field: formField }) => (
-                <Select
-                  value={formField.value || ''}
-                  onValueChange={(val) => formField.onChange(val)}
-                >
-                  <SelectTrigger
+              render={({ field: formField }) =>
+                field.is_multiple ? (
+                  <MultiSelect
                     id={field.id}
-                    className={`w-full text-[13px] h-10 bg-card ${hasError ? 'border-destructive ring-1 ring-destructive' : ''}`}
+                    options={fieldOptions}
+                    selected={Array.isArray(formField.value) ? (formField.value as string[]) : []}
+                    onChange={(val) => formField.onChange(val)}
+                    placeholder={field.placeholder || 'Select options...'}
+                    className={hasError ? 'border-destructive ring-1 ring-destructive' : ''}
+                  />
+                ) : (
+                  <Select
+                    value={formField.value || ''}
+                    onValueChange={(val) => formField.onChange(val)}
                   >
-                    <SelectValue placeholder={field.placeholder || 'Select an option...'} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {fieldOptions.map((opt, i) => (
-                      <SelectItem key={i} value={opt} className="text-xs">
-                        {opt}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+                    <SelectTrigger
+                      id={field.id}
+                      className={`w-full text-[13px] h-10 bg-card ${hasError ? 'border-destructive ring-1 ring-destructive' : ''}`}
+                    >
+                      <SelectValue placeholder={field.placeholder || 'Select an option...'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {fieldOptions.map((opt, i) => (
+                        <SelectItem key={i} value={opt} className="text-xs">
+                          {opt}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )
+              }
             />
             {hasError && (
               <span className="text-[11px] text-destructive flex items-center gap-1">
@@ -375,6 +388,7 @@ export const FormPreview: React.FC = () => {
         );
 
       case 'MULTIPLE_CHOICE':
+      case 'CHECKBOX':
         return (
           <div key={field.id} className="space-y-2">
             <Label className="text-xs font-medium">
@@ -384,46 +398,62 @@ export const FormPreview: React.FC = () => {
             {field.description && (
               <p className="text-[11px] text-muted-foreground">{field.description}</p>
             )}
-            <div className="space-y-1.5 pt-1">
-              {fieldOptions.map((opt, i) => (
-                <label
-                  key={i}
-                  className="flex items-center gap-2.5 text-xs text-foreground cursor-pointer p-2 rounded-lg border border-border/80 bg-muted/20 hover:bg-muted/40 transition-colors"
-                >
-                  <input
-                    type="checkbox"
-                    value={opt}
-                    {...register(`${field.id}.${opt}`)}
-                    className="size-3.5 rounded accent-primary text-primary"
-                  />
-                  <span>{opt}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-        );
+            <Controller
+              name={field.id}
+              control={control}
+              rules={{
+                required: field.is_required ? `${field.label} is required` : false,
+              }}
+              render={({ field: formField }) => {
+                const isMultiple = field.is_multiple !== false;
+                const selectedList: string[] = Array.isArray(formField.value)
+                  ? formField.value
+                  : formField.value
+                  ? [String(formField.value)]
+                  : [];
 
-      case 'CHECKBOX':
-        return (
-          <div key={field.id} className="space-y-1.5">
-            <label className="flex items-start gap-2.5 text-xs text-foreground cursor-pointer p-3 rounded-lg border border-border/80 bg-muted/20 hover:bg-muted/40 transition-colors">
-              <input
-                type="checkbox"
-                {...register(field.id, {
-                  required: field.is_required ? `${field.label} is required` : false,
-                })}
-                className="size-4 mt-0.5 rounded accent-primary text-primary"
-              />
-              <div className="space-y-0.5">
-                <span className="font-medium">
-                  {field.label}
-                  {field.is_required && <span className="text-destructive ml-1">*</span>}
-                </span>
-                {field.description && (
-                  <p className="text-[11px] text-muted-foreground">{field.description}</p>
-                )}
-              </div>
-            </label>
+                return (
+                  <div className="space-y-1.5 pt-1">
+                    {fieldOptions.map((opt, i) => {
+                      const isChecked = isMultiple
+                        ? selectedList.includes(opt)
+                        : formField.value === opt;
+
+                      return (
+                        <label
+                          key={i}
+                          className={`flex items-center gap-2.5 text-xs text-foreground cursor-pointer p-2.5 rounded-lg border transition-colors ${
+                            isChecked
+                              ? 'border-primary/50 bg-primary/5'
+                              : 'border-border/80 bg-muted/20 hover:bg-muted/40'
+                          }`}
+                        >
+                          <input
+                            type={isMultiple ? 'checkbox' : 'radio'}
+                            value={opt}
+                            checked={isChecked}
+                            onChange={() => {
+                              if (isMultiple) {
+                                const next = isChecked
+                                  ? selectedList.filter((item) => item !== opt)
+                                  : [...selectedList, opt];
+                                formField.onChange(next);
+                              } else {
+                                formField.onChange(opt);
+                              }
+                            }}
+                            className={`size-3.5 accent-primary text-primary cursor-pointer ${
+                              isMultiple ? 'rounded-xs' : 'rounded-full'
+                            }`}
+                          />
+                          <span>{opt}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                );
+              }}
+            />
             {hasError && (
               <span className="text-[11px] text-destructive flex items-center gap-1">
                 <AlertCircle className="size-3" />
@@ -495,15 +525,27 @@ export const FormPreview: React.FC = () => {
             {field.description && (
               <p className="text-[11px] text-muted-foreground">{field.description}</p>
             )}
-            <div className="border-2 border-dashed border-border rounded-xl p-5 text-center bg-card/40 hover:bg-accent/30 transition-colors">
-              <UploadCloud className="size-8 mx-auto text-muted-foreground/60 mb-1.5" />
-              <p className="text-xs font-medium text-foreground">
-                Drag &amp; drop file here, or click to browse
-              </p>
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                PDF, PNG, JPG up to 10MB
-              </p>
-            </div>
+            <Controller
+              name={field.id}
+              control={control}
+              rules={{
+                required: field.is_required ? `${field.label} is required` : false,
+              }}
+              render={({ field: formField }) => (
+                <FileUploadField
+                  id={field.id}
+                  isMultiple={Boolean(field.is_multiple)}
+                  value={formField.value || null}
+                  onChange={(val) => formField.onChange(val)}
+                />
+              )}
+            />
+            {hasError && (
+              <span className="text-[11px] text-destructive flex items-center gap-1">
+                <AlertCircle className="size-3" />
+                {errorMessage}
+              </span>
+            )}
           </div>
         );
 

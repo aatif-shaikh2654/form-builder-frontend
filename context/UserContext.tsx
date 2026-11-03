@@ -24,6 +24,7 @@ import { userService } from '@/features/user/services/userService';
 import { useBuilderStore } from '@/features/builder/store/builderStore';
 import { FORMS_QUERY_KEY } from '@/features/forms/hooks/useForms';
 import { useQueryClient } from '@tanstack/react-query';
+import { usePathname } from 'next/navigation';
 import { toast } from 'sonner';
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -38,13 +39,24 @@ export const UserProvider: React.FC<UserProviderProps> = ({
   initialUser = null,
 }) => {
   const queryClient = useQueryClient();
+  const pathname = usePathname();
+  const currentPath = pathname || (typeof window !== 'undefined' ? window.location.pathname : '');
+  const isExcludedPage = Boolean(
+    currentPath && (
+      currentPath.startsWith('/f/') ||
+      currentPath.startsWith('/preview') ||
+      currentPath.startsWith('/published')
+    )
+  );
 
-  // GET: /api/v1/auth/session via useQuery
-  const sessionQuery = useSessionQuery();
+  // GET: /api/v1/auth/session via useQuery (disabled on live form and preview pages)
+  const sessionQuery = useSessionQuery({
+    enabled: !isExcludedPage,
+  });
 
-  // GET: /api/v1/auth/me via useQuery (only enabled when session returns user_id)
+  // GET: /api/v1/auth/me via useQuery (disabled on live form and preview pages, or when no user_id)
   const currentUserQuery = useCurrentUserQuery({
-    enabled: Boolean(sessionQuery.data?.user_id),
+    enabled: !isExcludedPage && Boolean(sessionQuery.data?.user_id),
     initialData: initialUser,
   });
 
@@ -58,11 +70,13 @@ export const UserProvider: React.FC<UserProviderProps> = ({
   const isAuthenticated = Boolean(user);
   const isAuthenticating = loginMutation.isPending;
   const isSigningUp = signupMutation.isPending;
-  const isSessionLoading = sessionQuery.isLoading;
+  const isSessionLoading = !isExcludedPage && sessionQuery.isLoading;
 
   const isLoading =
-    sessionQuery.isLoading ||
-    (Boolean(sessionQuery.data?.user_id) && currentUserQuery.isLoading) ||
+    !isExcludedPage && (
+      sessionQuery.isLoading ||
+      (Boolean(sessionQuery.data?.user_id) && currentUserQuery.isLoading)
+    );
     isAuthenticating ||
     isSigningUp;
 

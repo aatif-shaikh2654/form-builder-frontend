@@ -14,3 +14,4 @@ export * from './components/SectionsManager';
 export * from './constants/layout.constants';
 export * from './components/LayoutWireframe';
 export * from './components/SectionSettingsDialog';
+export * from './components/ShareLiveFormDialog';

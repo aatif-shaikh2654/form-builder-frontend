@@ -53,6 +53,8 @@ async function syncSingleFormAndAllForms(
 
   const targetId = formId || useBuilderStore.getState().formId;
   if (targetId) {
+    queryClient.invalidateQueries({ queryKey: formDraftQueryKey(targetId) });
+    queryClient.invalidateQueries({ queryKey: ['forms', 'published'] });
     try {
       const freshForm = await formsService.getSingleForm(targetId);
       queryClient.setQueryData(formDetailQueryKey(targetId), freshForm);
@@ -186,6 +188,10 @@ export function useSaveDraftMutation(formId?: string | null) {
     onSuccess: (savedForm, variables) => {
       const id = variables.formId || formId;
       queryClient.invalidateQueries({ queryKey: FORMS_QUERY_KEY });
+      if (id) {
+        queryClient.invalidateQueries({ queryKey: formDraftQueryKey(id) });
+        queryClient.invalidateQueries({ queryKey: ['forms', 'published'] });
+      }
       if (savedForm) {
         queryClient.setQueryData(formDetailQueryKey(id || savedForm.id), savedForm);
         useBuilderStore.getState().syncFormFromServer(savedForm);

@@ -30,6 +30,7 @@ export interface FormElement {
   defaultValue?: unknown;
   options?: FormElementOption[];
   validation?: FormElementValidation;
+  is_multiple?: boolean;
 }
 
 export interface FormSchema {

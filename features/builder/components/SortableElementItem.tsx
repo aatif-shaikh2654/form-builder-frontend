@@ -552,6 +552,12 @@ export const SortableElementItem: React.FC<SortableElementItemProps> = ({ field,
             </div>
             <div className="text-[11px] text-muted-foreground/80 flex items-center gap-2 px-1">
               <span>{options.length} options defined</span>
+              {field.is_multiple && (
+                <>
+                  <span>•</span>
+                  <span className="text-primary font-medium">Multiple selection</span>
+                </>
+              )}
               <span>•</span>
               <button
                 type="button"
@@ -577,7 +583,7 @@ export const SortableElementItem: React.FC<SortableElementItemProps> = ({ field,
                   className="flex items-center justify-between p-2.5 px-3 rounded-md border border-border/70 bg-muted/15 group/opt hover:bg-muted/30 transition-colors"
                 >
                   <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                    {field.field_type === 'SINGLE_CHOICE' ? (
+                    {field.field_type === 'SINGLE_CHOICE' || (!field.is_multiple && field.field_type === 'MULTIPLE_CHOICE') ? (
                       <div className="size-4 rounded-full border border-primary/60 flex items-center justify-center shrink-0">
                         {idx === 0 && <div className="size-2 rounded-full bg-primary" />}
                       </div>
@@ -641,7 +647,9 @@ export const SortableElementItem: React.FC<SortableElementItemProps> = ({ field,
         {field.field_type === 'FILE_UPLOAD' && (
           <div className="border-2 border-dashed border-border/80 rounded-lg p-5 text-center bg-muted/10 flex flex-col items-center justify-center gap-1.5">
             <UploadCloud className="size-6 text-muted-foreground/60" />
-            <p className="text-xs font-medium text-foreground">Click or drag file to upload</p>
+            <p className="text-xs font-medium text-foreground">
+              {field.is_multiple ? 'Click or drag files to upload (Multiple files allowed)' : 'Click or drag file to upload'}
+            </p>
             <p className="text-[10px] text-muted-foreground">PDF, DOCX, PNG, JPG up to 10MB</p>
           </div>
         )}

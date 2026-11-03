@@ -4,12 +4,16 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useBuilderStore, type BuilderActiveTab } from '../store/builderStore';
-import { useSingleForm, useCreateFormMutation } from '@/features/forms/hooks/useForms';
+import {
+  useSingleForm,
+  useCreateFormMutation,
+} from '@/features/forms/hooks/useForms';
 import { useUser } from '@/context/UserContext';
 import { FORM_STATUS_STYLES } from '@/features/forms/constants/forms.constants';
 import { useConfirmationStore } from '@/store/useConfirmationStore';
 import type { SaveFormPayload, FieldsResponse } from '@/types/api.types';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { cn } from 'cn';
 import { Badge } from '@/components/ui/badge';
 import {
   Layers,
@@ -22,8 +26,10 @@ import {
   RotateCcw,
   Save,
   Check,
+  Share2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { ShareLiveFormDialog } from './ShareLiveFormDialog';
 
 export const BuilderToolbar: React.FC = () => {
   const router = useRouter();
@@ -49,10 +55,29 @@ export const BuilderToolbar: React.FC = () => {
   } = useBuilderStore();
 
   const { mutateAsync: createForm } = useCreateFormMutation();
-  const { saveDraft, isSavingDraft, publishForm, isPublishing } = useSingleForm(formId);
+  const { form, saveDraft, isSavingDraft, publishForm, isPublishing } = useSingleForm(formId);
+
+  // Directly check published_version and draft_version from form detail API
+  const publishedVersion = form?.published_version ?? null;
+  const draftVersion = form?.draft_version ?? null;
+
+  const isVersionsSame = Boolean(
+    status === 'PUBLISHED' &&
+    publishedVersion !== null &&
+    draftVersion !== null &&
+    publishedVersion === draftVersion
+  );
+
   const { isAuthenticated } = useUser();
   const confirm = useConfirmationStore((s) => s.confirm);
   const [isSaving, setIsSaving] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+
+  // Enabled if form is draft, or draft version ID differs from form version ID, or if there are unsaved local edits
+  const isPublishDisabled =
+    isSaving ||
+    isPublishing ||
+    (isVersionsSame && !isDirty);
 
   // Warn user on page refresh or tab close if they have unsaved changes
   useEffect(() => {
@@ -149,6 +174,7 @@ export const BuilderToolbar: React.FC = () => {
           section_id: sectionId,
           position,
           values,
+          is_multiple: Boolean(f.is_multiple),
         };
       };
 
@@ -241,6 +267,8 @@ export const BuilderToolbar: React.FC = () => {
           onClick: () => window.open(`/f/${liveSlug}`, '_blank'),
         },
       });
+
+      setIsShareModalOpen(true);
     } catch (err: unknown) {
       console.error('Failed to publish form:', err);
     } finally {
@@ -296,16 +324,17 @@ export const BuilderToolbar: React.FC = () => {
       {/* Top Bar: Back to forms + Form Title & Actions */}
       <div className="flex items-center justify-between pb-2 border-b border-border">
         <div className="flex items-center gap-3 min-w-0">
-          <Link href="/forms" onClick={handleReturnToWorkspace}>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="cursor-pointer gap-1.5 text-xs text-muted-foreground hover:text-foreground h-7.5 px-2 rounded-md"
-              title="Return to Forms Workspace"
-            >
-              <ArrowLeft className="size-3.5" />
-              <span>Workspace</span>
-            </Button>
+          <Link
+            href="/forms"
+            onClick={handleReturnToWorkspace}
+            className={cn(
+              buttonVariants({ variant: 'ghost', size: 'sm' }),
+              'cursor-pointer gap-1.5 text-xs text-muted-foreground hover:text-foreground h-7.5 px-2 rounded-md'
+            )}
+            title="Return to Forms Workspace"
+          >
+            <ArrowLeft className="size-3.5" />
+            <span>Workspace</span>
           </Link>
 
           <div className="h-4 w-px bg-border" />
@@ -324,19 +353,6 @@ export const BuilderToolbar: React.FC = () => {
             >
               {status}
             </span>
-
-            {status === 'PUBLISHED' && (slug || formId) && (
-              <a
-                href={`/f/${slug || formId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/20 transition-colors"
-                title={`Live Published Form: /f/${slug || formId}`}
-              >
-                <ExternalLink className="size-2.5" />
-                <span>/f/{slug || formId}</span>
-              </a>
-            )}
 
             {/* Unsaved vs Saved state indicator */}
             {isDirty ? (
@@ -385,36 +401,72 @@ export const BuilderToolbar: React.FC = () => {
             <span>Save Draft</span>
           </Button>
 
-          {/* Open in New Tab Preview */}
+          {/* Share Button for Live Form URL */}
+          {status === 'PUBLISHED' && (slug || form?.slug || formId) ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsShareModalOpen(true)}
+              className="cursor-pointer gap-1.5 text-xs h-7.5 px-3 rounded-md text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10 hover:border-emerald-500/50 font-medium"
+              title="Share live form link"
+            >
+              <Share2 className="size-3" />
+              <span>Share</span>
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled
+              className="cursor-not-allowed gap-1.5 text-xs h-7.5 px-3 rounded-md border-border text-muted-foreground opacity-50"
+              title="Publish the form to share the live link"
+            >
+              <Share2 className="size-3" />
+              <span>Share</span>
+            </Button>
+          )}
+
+          {/* Preview Draft Button */}
           <Link
             href={formId ? `/preview?id=${formId}` : '/preview'}
             target="_blank"
             rel="noopener noreferrer"
+            className={cn(
+              buttonVariants({ variant: 'outline', size: 'sm' }),
+              'cursor-pointer gap-1.5 text-xs h-7.5 px-3 rounded-md border-border hover:border-primary/50 text-foreground'
+            )}
+            title="Preview current draft in a new browser tab"
           >
-            <Button
-              variant="outline"
-              size="sm"
-              className="cursor-pointer gap-1.5 text-xs h-7.5 px-3 rounded-md border-border hover:border-primary/50 text-foreground"
-              title="Open full form preview in a new browser tab"
-            >
-              <ExternalLink className="size-3" />
-              <span>Live Preview</span>
-            </Button>
+            <ExternalLink className="size-3" />
+            <span>Preview</span>
           </Link>
 
           {/* Publish Live Button */}
           <Button
             size="sm"
             onClick={handlePublish}
-            disabled={isSaving || isPublishing}
-            className="cursor-pointer gap-1.5 text-xs h-7.5 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+            disabled={isPublishDisabled}
+            className={`cursor-pointer gap-1.5 text-xs h-7.5 rounded-md font-semibold transition-all ${
+              isPublishDisabled && !isPublishing
+                ? 'opacity-55 cursor-not-allowed bg-muted text-muted-foreground hover:bg-muted border border-border shadow-none'
+                : 'bg-primary hover:bg-primary/90 text-primary-foreground'
+            }`}
+            title={
+              isPublishing
+                ? 'Publishing form live...'
+                : isVersionsSame && !isDirty
+                ? 'Latest draft is already published live (no changes to publish)'
+                : 'Publish latest draft changes live'
+            }
           >
             {isPublishing ? (
               <Loader2 className="size-3 animate-spin" />
+            ) : isVersionsSame && !isDirty ? (
+              <Check className="size-3 text-muted-foreground" />
             ) : (
               <Send className="size-3" />
             )}
-            Publish
+            <span>{isVersionsSame && !isDirty ? 'Published' : 'Publish'}</span>
           </Button>
         </div>
       </div>
@@ -444,6 +496,15 @@ export const BuilderToolbar: React.FC = () => {
           );
         })}
       </div>
+
+      {/* Share Live Form Dialog */}
+      <ShareLiveFormDialog
+        open={isShareModalOpen}
+        onOpenChange={setIsShareModalOpen}
+        slug={slug || form?.slug}
+        formId={formId}
+        formTitle={title}
+      />
     </div>
   );
 };

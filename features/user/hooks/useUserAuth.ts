@@ -28,7 +28,7 @@ export { USER_QUERY_KEYS, USER_STALE_TIME, USER_GC_TIME };
  * Uses useQuery for fetching guest session or active user session info.
  * Maintains 5-minute stale time.
  */
-export function useSessionQuery() {
+export function useSessionQuery(options?: { enabled?: boolean }) {
   return useQuery<SessionData>({
     queryKey: USER_QUERY_KEYS.session,
     queryFn: async () => {
@@ -42,6 +42,7 @@ export function useSessionQuery() {
       }
       return session;
     },
+    enabled: options?.enabled ?? true,
     staleTime: USER_STALE_TIME,
     gcTime: USER_GC_TIME,
     refetchOnMount: false,
