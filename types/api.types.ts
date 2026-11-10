@@ -86,7 +86,39 @@ export interface SessionData {
   expires_at?: string | null;
 }
 
-// ----------------- Field Models -----------------
+// ----------------- Field Conditions & Models -----------------
+
+export type ConditionOperator =
+  | 'EQUALS'
+  | 'NOT_EQUALS'
+  | 'CONTAINS'
+  | 'NOT_CONTAINS'
+  | 'EMPTY'
+  | 'FILLED';
+
+export type ConditionAction = 'SHOW' | 'HIDE';
+
+export interface ConditionValue {
+  value: unknown;
+  [key: string]: unknown;
+}
+
+export interface FieldConditionTargetField {
+  id: string;
+  label: string;
+  field_type: FieldType | string;
+}
+
+export interface FieldCondition {
+  id: string;
+  target_field_id: string;
+  condition_operator: ConditionOperator | string;
+  condition_value: ConditionValue;
+  action: ConditionAction | string;
+  target_field?: FieldConditionTargetField | null;
+}
+
+export type FieldOptionItem = string | { label: string; value: string };
 
 export interface FieldsResponse {
   id: string;
@@ -100,9 +132,10 @@ export interface FieldsResponse {
   is_multiple?: boolean | null;
   position: number;
   validation_rules: Record<string, unknown>;
+  conditions?: FieldCondition[] | null;
   default_values: Record<string, unknown>;
   settings: Record<string, unknown>;
-  values?: string[] | null;
+  values?: FieldOptionItem[] | null;
   created_at: string;
   updated_at: string;
 }
@@ -118,9 +151,10 @@ export interface AddFieldPayload {
   is_multiple?: boolean | null;
   position: number;
   validation_rules: Record<string, unknown>;
+  conditions?: FieldCondition[] | null;
   default_values: Record<string, unknown>;
   settings: Record<string, unknown>;
-  values?: string[] | null;
+  values?: FieldOptionItem[] | null;
 }
 
 export interface EditFieldPayload {
@@ -134,9 +168,10 @@ export interface EditFieldPayload {
   is_multiple?: boolean | null;
   position?: number | null;
   validation_rules?: Record<string, unknown> | null;
+  conditions?: FieldCondition[] | null;
   default_values?: Record<string, unknown> | null;
   settings?: Record<string, unknown> | null;
-  values?: string[] | null;
+  values?: FieldOptionItem[] | null;
 }
 
 export type LayoutType = 'GRID' | 'SINGLE_COLUMN';
@@ -270,16 +305,30 @@ export interface CreateFormPayload {
   form_type: FormType;
 }
 
+export interface GenerateFormWithAIPayload {
+  user_prompt: string;
+}
+
 export interface EditFormPayload {
   title?: string | null;
   description?: string | null;
   form_type?: FormType | null;
   status?: FormStatus | null;
+  confirmation_message?: string | null;
+  allow_multiple_submission?: boolean;
+  require_login?: boolean;
+  show_progress_bar?: boolean;
+  shuffle_questions?: boolean;
+  submission_limit?: number | null;
+  start_at?: string | null;
+  end_at?: string | null;
 }
 
 export interface SaveFormPayload {
   title?: string | null;
   description?: string | null;
+  form_settings?: Partial<FormSettingsResponse> | Partial<UpdateSettingsPayload> | null;
+  quiz_settings?: Partial<QuizSettingsResponse> | Partial<UpdateQuizSettingsPayload> | null;
   sections: SectionResponse[];
   fields: FieldsResponse[];
 }
@@ -299,14 +348,16 @@ export interface PublishFormResponse {
 // ----------------- Form Versioning Models -----------------
 
 export interface DraftFormType {
-  id: string;
-  created_at: string;
-  updated_at: string;
-  form_id: string;
-  version_number: number;
-  content: Record<string, unknown>;
-  published_at: string | null;
-  published_by_id: string | null;
+  version_id?: string;
+  version_number?: number;
+  status?: string;
+  id?: string;
+  created_at?: string;
+  updated_at?: string;
+  form_id?: string;
+  content: Record<string, unknown> | SingleForm;
+  published_at?: string | null;
+  published_by_id?: string | null;
 }
 
 export interface DraftFormResponse {
@@ -318,10 +369,25 @@ export interface DraftFormResponse {
 export interface GetPublishedFormResponse {
   success: boolean;
   message: string;
-  data: DraftFormType;
+  data: DraftFormType | SingleForm;
+}
+
+export interface GetLiveFormResponse {
+  success: boolean;
+  message: string;
+  data: SingleForm;
 }
 
 // ----------------- Submission Models -----------------
+
+export interface UploadedFileResponse {
+  id: string;
+  original_name: string;
+  stored_filename: string;
+  path: string;
+  mime_type: string | null;
+  size: number;
+}
 
 export interface AnswerResponse {
   field_id: string;
@@ -332,6 +398,54 @@ export interface AnswerResponse {
 export interface SubmissionPayload {
   respondent_metadata: Record<string, unknown>;
   answers: AnswerResponse[];
+}
+
+// ----------------- Analytics & Submission Models -----------------
+
+export type SubmissionStatus = 'IN_PROGRESS' | 'SUBMITTED' | 'ABANDONED';
+
+export interface SubmissionAnswerResponse {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  field_id: string;
+  answer_text: string | null;
+  answer_json: Record<string, unknown> | unknown[] | null;
+  field: FieldsResponse;
+}
+
+export interface SubmissionResponse {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  form_id: string;
+  respondent_id: string | null;
+  response_number: number | null;
+  status: SubmissionStatus;
+  started_at: string | null;
+  submitted_at: string;
+  respondent_metadata: Record<string, unknown>;
+  submission_answers: SubmissionAnswerResponse[];
+}
+
+export interface FormAnalyticsResponse {
+  items: SubmissionResponse[];
+  page?: number | null;
+  limit?: number | null;
+  total?: number | null;
+  total_pages?: number | null;
+}
+
+export interface FormAnalyticsQueryResponse {
+  success: boolean;
+  message: string;
+  data: FormAnalyticsResponse;
+}
+
+export interface GetSubmissionsParams {
+  page?: number;
+  limit?: number;
+  search?: string;
 }
 
 // ----------------- Query & Stats Models -----------------

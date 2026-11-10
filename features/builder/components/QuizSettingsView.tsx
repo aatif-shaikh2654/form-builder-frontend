@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useBuilderStore } from '../store/builderStore';
 import { DEFAULT_QUIZ_SETTINGS } from '../constants/builder.constants';
+import { validateQuizSettings, type QuizSettingsErrors } from '../utils/settingsValidation';
 import { useSingleForm } from '@/features/forms/hooks/useForms';
 import type { UpdateQuizSettingsPayload } from '@/types/api.types';
 import { Label } from '@/components/ui/label';
@@ -17,7 +18,7 @@ interface QuizSettingsViewProps {
 }
 
 export const QuizSettingsView: React.FC<QuizSettingsViewProps> = ({ onClose }) => {
-  const { formId, quizSettings, updateQuizSettings, setFormType } = useBuilderStore();
+  const { formId, quizSettings, updateQuizSettings } = useBuilderStore();
   const { updateQuizSettings: saveQuizSettingsApi, isUpdatingQuizSettings } = useSingleForm(formId);
 
   const [timeLimit, setTimeLimit] = useState<number | ''>(
@@ -35,10 +36,26 @@ export const QuizSettingsView: React.FC<QuizSettingsViewProps> = ({ onClose }) =
   const [showScoreAfterSubmissions, setShowScoreAfterSubmissions] = useState(
     quizSettings.show_score_after_submissions ?? DEFAULT_QUIZ_SETTINGS.show_score_after_submissions ?? true
   );
+  const [errors, setErrors] = useState<QuizSettingsErrors>({});
 
   const handleSave = async () => {
-    // Ensure form type is QUIZ
-    setFormType('QUIZ');
+    const validation = validateQuizSettings({
+      time_limit: timeLimit,
+      passing_score: passingScore,
+      total_attempts: totalAttempts,
+    });
+
+    if (!validation.isValid) {
+      setErrors(validation.errors);
+      const firstMsg = Object.values(validation.errors)[0];
+      toast.error(firstMsg);
+      return;
+    }
+
+    setErrors({});
+
+    // Ensure form type is QUIZ and enable draft/publish
+    useBuilderStore.setState({ formType: 'QUIZ', isDirty: true });
 
     const payload: UpdateQuizSettingsPayload = {
       time_limit: timeLimit === '' ? null : Number(timeLimit),
@@ -53,11 +70,24 @@ export const QuizSettingsView: React.FC<QuizSettingsViewProps> = ({ onClose }) =
     if (formId) {
       try {
         await saveQuizSettingsApi(payload);
+        updateQuizSettings(payload);
+        useBuilderStore.setState({
+          initialQuizSettings: payload,
+          isQuizSettingsEdited: false,
+          isDirty: true,
+        });
         toast.success('Quiz rules updated');
-      } catch {
-        // Fallback updated local state
+      } catch (err: unknown) {
+        console.error('Failed to update quiz settings:', err);
+        const msg =
+          err && typeof err === 'object' && 'message' in err
+            ? String((err as { message: unknown }).message)
+            : 'Failed to save quiz rules. Please check your inputs and try again.';
+        toast.error(msg);
+        return; // DO NOT CLOSE SHEET ON ERROR!
       }
     } else {
+      updateQuizSettings(payload);
       toast.success('Quiz settings saved locally');
     }
 
@@ -121,10 +151,19 @@ export const QuizSettingsView: React.FC<QuizSettingsViewProps> = ({ onClose }) =
                 type="number"
                 placeholder="No limit"
                 value={timeLimit}
-                onChange={(e) => setTimeLimit(e.target.value === '' ? '' : Number(e.target.value))}
-                className="text-xs"
+                onChange={(e) => {
+                  setTimeLimit(e.target.value === '' ? '' : Number(e.target.value));
+                  if (errors.time_limit) setErrors((prev) => ({ ...prev, time_limit: undefined }));
+                  useBuilderStore.getState().setIsDirty(true);
+                }}
+                className={`text-xs ${errors.time_limit ? 'border-destructive ring-1 ring-destructive' : ''}`}
+                aria-invalid={Boolean(errors.time_limit)}
               />
-              <p className="text-[10px] text-muted-foreground">e.g. 30 minutes countdown</p>
+              {errors.time_limit ? (
+                <p className="text-[10px] text-destructive font-medium">{errors.time_limit}</p>
+              ) : (
+                <p className="text-[10px] text-muted-foreground">e.g. 30 minutes countdown</p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -141,10 +180,19 @@ export const QuizSettingsView: React.FC<QuizSettingsViewProps> = ({ onClose }) =
                 max={100}
                 placeholder="70"
                 value={passingScore}
-                onChange={(e) => setPassingScore(e.target.value)}
-                className="text-xs"
+                onChange={(e) => {
+                  setPassingScore(e.target.value);
+                  if (errors.passing_score) setErrors((prev) => ({ ...prev, passing_score: undefined }));
+                  useBuilderStore.getState().setIsDirty(true);
+                }}
+                className={`text-xs ${errors.passing_score ? 'border-destructive ring-1 ring-destructive' : ''}`}
+                aria-invalid={Boolean(errors.passing_score)}
               />
-              <p className="text-[10px] text-muted-foreground">Percentage required to pass</p>
+              {errors.passing_score ? (
+                <p className="text-[10px] text-destructive font-medium">{errors.passing_score}</p>
+              ) : (
+                <p className="text-[10px] text-muted-foreground">Percentage required to pass</p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -160,10 +208,19 @@ export const QuizSettingsView: React.FC<QuizSettingsViewProps> = ({ onClose }) =
                 min={1}
                 placeholder="Unlimited"
                 value={totalAttempts}
-                onChange={(e) => setTotalAttempts(e.target.value === '' ? '' : Number(e.target.value))}
-                className="text-xs"
+                onChange={(e) => {
+                  setTotalAttempts(e.target.value === '' ? '' : Number(e.target.value));
+                  if (errors.total_attempts) setErrors((prev) => ({ ...prev, total_attempts: undefined }));
+                  useBuilderStore.getState().setIsDirty(true);
+                }}
+                className={`text-xs ${errors.total_attempts ? 'border-destructive ring-1 ring-destructive' : ''}`}
+                aria-invalid={Boolean(errors.total_attempts)}
               />
-              <p className="text-[10px] text-muted-foreground">Leave empty for unlimited</p>
+              {errors.total_attempts ? (
+                <p className="text-[10px] text-destructive font-medium">{errors.total_attempts}</p>
+              ) : (
+                <p className="text-[10px] text-muted-foreground">Leave empty for unlimited</p>
+              )}
             </div>
           </div>
         </div>
@@ -190,7 +247,10 @@ export const QuizSettingsView: React.FC<QuizSettingsViewProps> = ({ onClose }) =
               <Switch
                 id="show-score"
                 checked={showScoreAfterSubmissions}
-                onCheckedChange={setShowScoreAfterSubmissions}
+                onCheckedChange={(val) => {
+                  setShowScoreAfterSubmissions(val);
+                  useBuilderStore.getState().setIsDirty(true);
+                }}
               />
             </div>
 
@@ -206,7 +266,10 @@ export const QuizSettingsView: React.FC<QuizSettingsViewProps> = ({ onClose }) =
               <Switch
                 id="show-answers"
                 checked={showCorrectAnswers}
-                onCheckedChange={setShowCorrectAnswers}
+                onCheckedChange={(val) => {
+                  setShowCorrectAnswers(val);
+                  useBuilderStore.getState().setIsDirty(true);
+                }}
               />
             </div>
           </div>

@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Sliders, Plus, X, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useConfirmationStore } from '@/store/useConfirmationStore';
+import { FieldValidationRulesEditor } from './FieldValidationRulesEditor';
+import { FieldConditionsEditor } from './FieldConditionsEditor';
 import {
   Select,
   SelectContent,
@@ -35,6 +37,16 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
   const [newOption, setNewOption] = useState('');
 
   const selectedField = fields.find((f) => f.id === selectedFieldId);
+
+  const sectionItems = React.useMemo(() => {
+    const map: Record<string, string> = {
+      root: 'Directly in Form (No Section)',
+    };
+    for (const sec of sections) {
+      map[sec.id] = `${sec.title} (${sec.layout_type === 'GRID' ? `${sec.column_count || 1} cols` : '1 col'})`;
+    }
+    return map;
+  }, [sections]);
 
   const handleDeleteField = async () => {
     if (!selectedField) return;
@@ -63,7 +75,13 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
 
   const currentOptions: string[] =
     Array.isArray(selectedField.values) && selectedField.values.length > 0
-      ? selectedField.values
+      ? selectedField.values.map((opt) =>
+          typeof opt === 'object' && opt !== null
+            ? (opt as { label?: string; value?: string }).label ||
+              (opt as { label?: string; value?: string }).value ||
+              ''
+            : String(opt)
+        )
       : Array.isArray(selectedField.settings?.options)
       ? (selectedField.settings.options as string[])
       : [];
@@ -75,6 +93,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
     updateField(selectedField.id, {
       settings: newSettings,
       values: updated,
+      is_multiple:
+        selectedField.field_type === 'MULTIPLE_CHOICE'
+          ? true
+          : selectedField.is_multiple,
     });
     setNewOption('');
   };
@@ -85,6 +107,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
     updateField(selectedField.id, {
       settings: newSettings,
       values: updated,
+      is_multiple:
+        selectedField.field_type === 'MULTIPLE_CHOICE'
+          ? true
+          : selectedField.is_multiple,
     });
   };
 
@@ -156,6 +182,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
               Assign to Section
             </Label>
             <Select
+              items={sectionItems}
               value={selectedField.section_id || 'root'}
               onValueChange={(val) => {
                 const newSectionId = val === 'root' ? null : val;
@@ -166,14 +193,25 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
               }}
             >
               <SelectTrigger id="field-section" className="w-full text-[13px] h-10 bg-background">
-                <SelectValue placeholder="Directly in Form (No Section)" />
+                <SelectValue placeholder="Directly in Form (No Section)">
+                  {(val: unknown) =>
+                    typeof val === 'string' && val in sectionItems
+                      ? sectionItems[val]
+                      : 'Directly in Form (No Section)'
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="root" className="text-xs">
+                <SelectItem value="root" label="Directly in Form (No Section)" className="text-xs">
                   Directly in Form (No Section)
                 </SelectItem>
                 {sections.map((sec) => (
-                  <SelectItem key={sec.id} value={sec.id} className="text-xs">
+                  <SelectItem
+                    key={sec.id}
+                    value={sec.id}
+                    label={`${sec.title} (${sec.layout_type === 'GRID' ? `${sec.column_count || 1} cols` : '1 col'})`}
+                    className="text-xs"
+                  >
                     {sec.title} ({sec.layout_type === 'GRID' ? `${sec.column_count || 1} cols` : '1 col'})
                   </SelectItem>
                 ))}
@@ -250,7 +288,12 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
             </div>
             <Switch
               id="field-multiple"
-              checked={Boolean(selectedField.is_multiple)}
+              checked={
+                selectedField.field_type === 'MULTIPLE_CHOICE'
+                  ? true
+                  : Boolean(selectedField.is_multiple)
+              }
+              disabled={selectedField.field_type === 'MULTIPLE_CHOICE'}
               onCheckedChange={(checked) => {
                 updateField(selectedField.id, { is_multiple: checked });
               }}
@@ -275,6 +318,27 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
               }}
             />
           </div>
+        )}
+
+        {/* Validation Rules Section */}
+        {selectedField.field_type !== 'SECTION_HEADING' && (
+          <FieldValidationRulesEditor
+            field={selectedField}
+            onUpdateRules={(rules) => {
+              updateField(selectedField.id, { validation_rules: rules });
+            }}
+          />
+        )}
+
+        {/* Conditional Logic Section */}
+        {selectedField.field_type !== 'SECTION_HEADING' && (
+          <FieldConditionsEditor
+            field={selectedField}
+            allFields={fields}
+            onUpdateConditions={(conditions) => {
+              updateField(selectedField.id, { conditions });
+            }}
+          />
         )}
 
         {/* Delete field */}

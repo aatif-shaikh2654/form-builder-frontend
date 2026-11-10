@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { useBuilderStore } from '../store/builderStore';
 import type { FieldsResponse } from '@/types/api.types';
@@ -20,13 +20,14 @@ import {
 import { DatePicker, TimePicker, DateTimePicker } from '@/components/common';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { FileUploadField } from '@/components/ui/file-uploader';
+import { validateSingleField } from '@/features/forms/utils/fieldValidation';
+import { computeFieldVisibility } from '@/features/forms/utils/fieldConditions';
 import { toast } from 'sonner';
 import {
   ArrowLeft,
   CheckCircle2,
   Clock,
   Star,
-  UploadCloud,
   AlertCircle,
   Monitor,
   Tablet,
@@ -91,20 +92,34 @@ export const FormPreview: React.FC = () => {
     });
   };
 
+  const onInvalid = () => {
+    toast.error('Please fix the highlighted errors before submitting.');
+  };
+
   const handleReset = () => {
     reset();
     setIsSubmitted(false);
   };
 
+  const fieldVisibility = useMemo(() => {
+    return computeFieldVisibility(fields, (watchedValues as Record<string, unknown>) || {});
+  }, [fields, watchedValues]);
+
   const renderField = (field: FieldsResponse) => {
+    if (fieldVisibility[field.id] === false) return null;
+
     const hasError = !!errors[field.id];
     const errorMessage = errors[field.id]?.message as string | undefined;
     const fieldOptions =
       Array.isArray(field.values) && field.values.length > 0
-        ? field.values
+        ? field.values.map((opt) =>
+            typeof opt === 'object' && opt !== null
+              ? (opt as { label: string }).label
+              : String(opt)
+          )
         : Array.isArray(field.settings?.options)
         ? (field.settings.options as string[])
-        : ['Option 1', 'Option 2', 'Option 3'];
+        : [];
 
     switch (field.field_type) {
       case 'SECTION_HEADING':
@@ -133,10 +148,10 @@ export const FormPreview: React.FC = () => {
         if (field.field_type === 'NUMBER') inputType = 'number';
 
         return (
-          <div key={field.id} className="space-y-1.5">
-            <Label htmlFor={field.id} className="text-xs font-medium">
+          <div key={field.id} className="space-y-1">
+            <Label htmlFor={field.id} className="text-xs font-medium cursor-pointer">
               {field.label}
-              {field.is_required && <span className="text-destructive ml-1">*</span>}
+              {field.is_required && <span className="text-destructive ml-0.5 font-bold">*</span>}
             </Label>
             {field.description && (
               <p className="text-[11px] text-muted-foreground">{field.description}</p>
@@ -146,7 +161,10 @@ export const FormPreview: React.FC = () => {
               type={inputType}
               placeholder={field.placeholder || undefined}
               {...register(field.id, {
-                required: field.is_required ? `${field.label} is required` : false,
+                validate: (val) =>
+                  fieldVisibility[field.id] === false
+                    ? true
+                    : validateSingleField(field, val) || true,
               })}
               className={hasError ? 'border-destructive' : ''}
             />
@@ -162,10 +180,10 @@ export const FormPreview: React.FC = () => {
 
       case 'DATE':
         return (
-          <div key={field.id} className="space-y-1.5">
-            <Label htmlFor={field.id} className="text-xs font-medium">
+          <div key={field.id} className="space-y-1">
+            <Label htmlFor={field.id} className="text-xs font-medium cursor-pointer">
               {field.label}
-              {field.is_required && <span className="text-destructive ml-1">*</span>}
+              {field.is_required && <span className="text-destructive ml-0.5 font-bold">*</span>}
             </Label>
             {field.description && (
               <p className="text-[11px] text-muted-foreground">{field.description}</p>
@@ -174,7 +192,10 @@ export const FormPreview: React.FC = () => {
               name={field.id}
               control={control}
               rules={{
-                required: field.is_required ? `${field.label} is required` : false,
+                validate: (val) =>
+                  fieldVisibility[field.id] === false
+                    ? true
+                    : validateSingleField(field, val) || true,
               }}
               render={({ field: formField }) => (
                 <DatePicker
@@ -197,10 +218,10 @@ export const FormPreview: React.FC = () => {
 
       case 'TIME':
         return (
-          <div key={field.id} className="space-y-1.5">
-            <Label htmlFor={field.id} className="text-xs font-medium">
+          <div key={field.id} className="space-y-1">
+            <Label htmlFor={field.id} className="text-xs font-medium cursor-pointer">
               {field.label}
-              {field.is_required && <span className="text-destructive ml-1">*</span>}
+              {field.is_required && <span className="text-destructive ml-0.5 font-bold">*</span>}
             </Label>
             {field.description && (
               <p className="text-[11px] text-muted-foreground">{field.description}</p>
@@ -209,7 +230,10 @@ export const FormPreview: React.FC = () => {
               name={field.id}
               control={control}
               rules={{
-                required: field.is_required ? `${field.label} is required` : false,
+                validate: (val) =>
+                  fieldVisibility[field.id] === false
+                    ? true
+                    : validateSingleField(field, val) || true,
               }}
               render={({ field: formField }) => (
                 <TimePicker
@@ -232,10 +256,10 @@ export const FormPreview: React.FC = () => {
 
       case 'DATE_TIME':
         return (
-          <div key={field.id} className="space-y-1.5">
-            <Label htmlFor={field.id} className="text-xs font-medium">
+          <div key={field.id} className="space-y-1">
+            <Label htmlFor={field.id} className="text-xs font-medium cursor-pointer">
               {field.label}
-              {field.is_required && <span className="text-destructive ml-1">*</span>}
+              {field.is_required && <span className="text-destructive ml-0.5 font-bold">*</span>}
             </Label>
             {field.description && (
               <p className="text-[11px] text-muted-foreground">{field.description}</p>
@@ -244,7 +268,10 @@ export const FormPreview: React.FC = () => {
               name={field.id}
               control={control}
               rules={{
-                required: field.is_required ? `${field.label} is required` : false,
+                validate: (val) =>
+                  fieldVisibility[field.id] === false
+                    ? true
+                    : validateSingleField(field, val) || true,
               }}
               render={({ field: formField }) => (
                 <DateTimePicker
@@ -267,10 +294,10 @@ export const FormPreview: React.FC = () => {
 
       case 'LONG_TEXT':
         return (
-          <div key={field.id} className="space-y-1.5">
-            <Label htmlFor={field.id} className="text-xs font-medium">
+          <div key={field.id} className="space-y-1">
+            <Label htmlFor={field.id} className="text-xs font-medium cursor-pointer">
               {field.label}
-              {field.is_required && <span className="text-destructive ml-1">*</span>}
+              {field.is_required && <span className="text-destructive ml-0.5 font-bold">*</span>}
             </Label>
             {field.description && (
               <p className="text-[11px] text-muted-foreground">{field.description}</p>
@@ -280,7 +307,10 @@ export const FormPreview: React.FC = () => {
               rows={4}
               placeholder={field.placeholder || undefined}
               {...register(field.id, {
-                required: field.is_required ? `${field.label} is required` : false,
+                validate: (val) =>
+                  fieldVisibility[field.id] === false
+                    ? true
+                    : validateSingleField(field, val) || true,
               })}
               className={hasError ? 'border-destructive' : ''}
             />
@@ -295,10 +325,10 @@ export const FormPreview: React.FC = () => {
 
       case 'DROPDOWN':
         return (
-          <div key={field.id} className="space-y-1.5">
-            <Label htmlFor={field.id} className="text-xs font-medium">
+          <div key={field.id} className="space-y-1">
+            <Label htmlFor={field.id} className="text-xs font-medium cursor-pointer">
               {field.label}
-              {field.is_required && <span className="text-destructive ml-1">*</span>}
+              {field.is_required && <span className="text-destructive ml-0.5 font-bold">*</span>}
             </Label>
             {field.description && (
               <p className="text-[11px] text-muted-foreground">{field.description}</p>
@@ -307,7 +337,10 @@ export const FormPreview: React.FC = () => {
               name={field.id}
               control={control}
               rules={{
-                required: field.is_required ? `${field.label} is required` : false,
+                validate: (val) =>
+                  fieldVisibility[field.id] === false
+                    ? true
+                    : validateSingleField(field, val) || true,
               }}
               render={({ field: formField }) =>
                 field.is_multiple ? (
@@ -352,32 +385,62 @@ export const FormPreview: React.FC = () => {
 
       case 'SINGLE_CHOICE':
         return (
-          <div key={field.id} className="space-y-2">
-            <Label className="text-xs font-medium">
+          <div key={field.id} className="space-y-1">
+            <Label htmlFor={`${field.id}_opt_0`} className="text-xs font-medium cursor-pointer">
               {field.label}
-              {field.is_required && <span className="text-destructive ml-1">*</span>}
+              {field.is_required && <span className="text-destructive ml-0.5 font-bold">*</span>}
             </Label>
             {field.description && (
               <p className="text-[11px] text-muted-foreground">{field.description}</p>
             )}
-            <div className="space-y-1.5 pt-1">
-              {fieldOptions.map((opt, i) => (
-                <label
-                  key={i}
-                  className="flex items-center gap-2.5 text-xs text-foreground cursor-pointer p-2 rounded-lg border border-border/80 bg-muted/20 hover:bg-muted/40 transition-colors"
-                >
-                  <input
-                    type="radio"
-                    value={opt}
-                    {...register(field.id, {
-                      required: field.is_required ? `${field.label} is required` : false,
-                    })}
-                    className="size-3.5 accent-primary text-primary"
-                  />
-                  <span>{opt}</span>
-                </label>
-              ))}
-            </div>
+            <Controller
+              name={field.id}
+              control={control}
+              rules={{
+                validate: (val) =>
+                  fieldVisibility[field.id] === false
+                    ? true
+                    : validateSingleField(field, val) || true,
+              }}
+              render={({ field: formField }) => (
+                <div className="space-y-1.5">
+                  {fieldOptions.map((opt, i) => {
+                    const isChecked = formField.value === opt;
+                    const optId = `${field.id}_opt_${i}`;
+                    return (
+                      <label
+                        key={i}
+                        htmlFor={optId}
+                        className={`flex items-center gap-2.5 p-2.5 px-3 rounded-md border text-xs cursor-pointer transition-colors group select-none ${
+                          isChecked
+                            ? 'border-primary/50 bg-primary/5 text-foreground'
+                            : 'border-border/70 bg-muted/15 hover:bg-muted/30 text-foreground'
+                        }`}
+                      >
+                        <input
+                          id={optId}
+                          type="radio"
+                          value={opt}
+                          checked={isChecked}
+                          onChange={() => formField.onChange(opt)}
+                          className="sr-only"
+                        />
+                        <div
+                          className={`size-4 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
+                            isChecked
+                              ? 'border-primary/80 bg-primary/10'
+                              : 'border-primary/60 bg-transparent group-hover:border-primary'
+                          }`}
+                        >
+                          {isChecked && <div className="size-2 rounded-full bg-primary" />}
+                        </div>
+                        <span className="text-[13px] text-foreground leading-normal">{opt}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            />
             {hasError && (
               <span className="text-[11px] text-destructive flex items-center gap-1">
                 <AlertCircle className="size-3" />
@@ -390,10 +453,10 @@ export const FormPreview: React.FC = () => {
       case 'MULTIPLE_CHOICE':
       case 'CHECKBOX':
         return (
-          <div key={field.id} className="space-y-2">
-            <Label className="text-xs font-medium">
+          <div key={field.id} className="space-y-1">
+            <Label htmlFor={`${field.id}_opt_0`} className="text-xs font-medium cursor-pointer">
               {field.label}
-              {field.is_required && <span className="text-destructive ml-1">*</span>}
+              {field.is_required && <span className="text-destructive ml-0.5 font-bold">*</span>}
             </Label>
             {field.description && (
               <p className="text-[11px] text-muted-foreground">{field.description}</p>
@@ -402,7 +465,10 @@ export const FormPreview: React.FC = () => {
               name={field.id}
               control={control}
               rules={{
-                required: field.is_required ? `${field.label} is required` : false,
+                validate: (val) =>
+                  fieldVisibility[field.id] === false
+                    ? true
+                    : validateSingleField(field, val) || true,
               }}
               render={({ field: formField }) => {
                 const isMultiple = field.is_multiple !== false;
@@ -413,22 +479,25 @@ export const FormPreview: React.FC = () => {
                   : [];
 
                 return (
-                  <div className="space-y-1.5 pt-1">
+                  <div className="space-y-1.5">
                     {fieldOptions.map((opt, i) => {
                       const isChecked = isMultiple
                         ? selectedList.includes(opt)
                         : formField.value === opt;
+                      const optId = `${field.id}_opt_${i}`;
 
                       return (
                         <label
                           key={i}
-                          className={`flex items-center gap-2.5 text-xs text-foreground cursor-pointer p-2.5 rounded-lg border transition-colors ${
+                          htmlFor={optId}
+                          className={`flex items-center gap-2.5 p-2.5 px-3 rounded-md border text-xs cursor-pointer transition-colors group select-none ${
                             isChecked
-                              ? 'border-primary/50 bg-primary/5'
-                              : 'border-border/80 bg-muted/20 hover:bg-muted/40'
+                              ? 'border-primary/50 bg-primary/5 text-foreground'
+                              : 'border-border/70 bg-muted/15 hover:bg-muted/30 text-foreground'
                           }`}
                         >
                           <input
+                            id={optId}
                             type={isMultiple ? 'checkbox' : 'radio'}
                             value={opt}
                             checked={isChecked}
@@ -442,11 +511,33 @@ export const FormPreview: React.FC = () => {
                                 formField.onChange(opt);
                               }
                             }}
-                            className={`size-3.5 accent-primary text-primary cursor-pointer ${
-                              isMultiple ? 'rounded-xs' : 'rounded-full'
-                            }`}
+                            className="sr-only"
                           />
-                          <span>{opt}</span>
+
+                          {/* Same custom Checkbox / Radio UI as Builder */}
+                          {isMultiple ? (
+                            <div
+                              className={`size-4 rounded-xs border flex items-center justify-center shrink-0 transition-colors ${
+                                isChecked
+                                  ? 'border-primary/80 bg-primary/10'
+                                  : 'border-primary/60 bg-transparent group-hover:border-primary'
+                              }`}
+                            >
+                              {isChecked && <div className="size-2 rounded-xs bg-primary" />}
+                            </div>
+                          ) : (
+                            <div
+                              className={`size-4 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
+                                isChecked
+                                  ? 'border-primary/80 bg-primary/10'
+                                  : 'border-primary/60 bg-transparent group-hover:border-primary'
+                              }`}
+                            >
+                              {isChecked && <div className="size-2 rounded-full bg-primary" />}
+                            </div>
+                          )}
+
+                          <span className="text-[13px] text-foreground leading-normal">{opt}</span>
                         </label>
                       );
                     })}
@@ -465,10 +556,10 @@ export const FormPreview: React.FC = () => {
 
       case 'RATING':
         return (
-          <div key={field.id} className="space-y-2">
+          <div key={field.id} className="space-y-1">
             <Label className="text-xs font-medium">
               {field.label}
-              {field.is_required && <span className="text-destructive ml-1">*</span>}
+              {field.is_required && <span className="text-destructive ml-0.5 font-bold">*</span>}
             </Label>
             {field.description && (
               <p className="text-[11px] text-muted-foreground">{field.description}</p>
@@ -476,12 +567,17 @@ export const FormPreview: React.FC = () => {
             <Controller
               control={control}
               name={field.id}
-              rules={{ required: field.is_required ? `${field.label} is required` : false }}
+              rules={{
+                validate: (val) =>
+                  fieldVisibility[field.id] === false
+                    ? true
+                    : validateSingleField(field, val) || true,
+              }}
               render={({ field: ratingField }) => {
                 const currentRating = Number(ratingField.value || 0);
                 const maxStars = Number(field.settings?.max_stars || 5);
                 return (
-                  <div className="flex items-center gap-1.5 pt-1">
+                  <div className="flex items-center gap-1.5">
                     {Array.from({ length: maxStars }).map((_, idx) => {
                       const starVal = idx + 1;
                       const isFilled = starVal <= currentRating;
@@ -517,10 +613,10 @@ export const FormPreview: React.FC = () => {
 
       case 'FILE_UPLOAD':
         return (
-          <div key={field.id} className="space-y-1.5">
-            <Label className="text-xs font-medium">
+          <div key={field.id} className="space-y-1">
+            <Label htmlFor={field.id} className="text-xs font-medium cursor-pointer">
               {field.label}
-              {field.is_required && <span className="text-destructive ml-1">*</span>}
+              {field.is_required && <span className="text-destructive ml-0.5 font-bold">*</span>}
             </Label>
             {field.description && (
               <p className="text-[11px] text-muted-foreground">{field.description}</p>
@@ -529,7 +625,10 @@ export const FormPreview: React.FC = () => {
               name={field.id}
               control={control}
               rules={{
-                required: field.is_required ? `${field.label} is required` : false,
+                validate: (val) =>
+                  fieldVisibility[field.id] === false
+                    ? true
+                    : validateSingleField(field, val) || true,
               }}
               render={({ field: formField }) => (
                 <FileUploadField
@@ -551,8 +650,8 @@ export const FormPreview: React.FC = () => {
 
       default:
         return null;
-    }
-  };
+      }
+    };
 
   const unassignedFields = fields.filter(
     (f) => !f.section_id || !sections.some((s) => s.id === f.section_id)
@@ -708,7 +807,7 @@ export const FormPreview: React.FC = () => {
               )}
             </div>
 
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+            <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-6">
               {/* Root Items (Interleaved Sections and Direct Questions) */}
               {rootItems.length === 0 ? (
                 <div className="p-8 text-center text-xs text-muted-foreground border border-dashed border-border rounded-md">
@@ -723,7 +822,10 @@ export const FormPreview: React.FC = () => {
                       const sectionFields = fields
                         .filter((f) => f.section_id === section.id)
                         .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-                      if (sectionFields.length === 0) return null;
+                      const visibleSectionFields = sectionFields.filter(
+                        (f) => fieldVisibility[f.id] !== false
+                      );
+                      if (visibleSectionFields.length === 0) return null;
 
                       const gridClass = getSectionGridClass(
                         section.layout_type,
@@ -749,11 +851,12 @@ export const FormPreview: React.FC = () => {
                           </div>
 
                           <div className={gridClass}>
-                            {sectionFields.map((field) => renderField(field))}
+                            {visibleSectionFields.map((field) => renderField(field))}
                           </div>
                         </div>
                       );
                     } else {
+                      if (fieldVisibility[item.field.id] === false) return null;
                       return (
                         <div key={item.field.id} className="pt-2 first:pt-0">
                           {renderField(item.field)}

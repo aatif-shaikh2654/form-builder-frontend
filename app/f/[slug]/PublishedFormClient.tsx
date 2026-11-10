@@ -1,37 +1,27 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useSubmitFormMutation } from '@/features/forms/hooks/useForms';
+import React, { useState, useMemo } from 'react';
 import type {
-  FieldsResponse,
   SingleForm,
-  AnswerResponse,
+  UploadedFileResponse,
 } from '@/types/api.types';
-import { getSectionGridClass } from '@/features/builder/constants/layout.constants';
+import { useSubmitFormMutation } from '@/features/forms/hooks/useForms';
+import { formsService } from '@/features/forms/services/formsService';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { DatePicker, TimePicker, DateTimePicker } from '@/components/common';
-import { MultiSelect } from '@/components/ui/multi-select';
-import { FileUploadField, type FileMetadata } from '@/components/ui/file-uploader';
-import {
-  CheckCircle2,
-  Star,
-  UploadCloud,
-  Loader2,
-  FileQuestion,
-  RotateCcw,
-} from 'lucide-react';
+import type { FileMetadata } from '@/components/ui/file-uploader';
+import { CheckCircle2, RotateCcw, Loader2, FileQuestion } from 'lucide-react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
+import { FormBodyRenderer } from '@/features/forms/components/FormBodyRenderer';
+import {
+  getAllFormFields,
+  formatAnswersForSubmission,
+} from '@/features/forms/utils/formRendererUtils';
+import {
+  validateAllFormFields,
+  validateSingleField,
+} from '@/features/forms/utils/fieldValidation';
+import { computeFieldVisibility } from '@/features/forms/utils/fieldConditions';
 
 export function PublicFormSkeleton() {
   return (
@@ -80,16 +70,22 @@ export function PublicFormSkeleton() {
 
 interface PublishedFormClientProps {
   initialForm: SingleForm | null;
-  slug: string;
+  slug?: string;
 }
 
-export function PublishedFormClient({ initialForm, slug }: PublishedFormClientProps) {
+export function PublishedFormClient({ initialForm }: PublishedFormClientProps) {
   const { mutateAsync: submitForm, isPending: isSubmitting } = useSubmitFormMutation();
 
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   const form = initialForm;
+
+  const allFields = useMemo(() => {
+    return getAllFormFields(form?.sections, form?.fields);
+  }, [form?.sections, form?.fields]);
 
   if (!form) {
     return (
@@ -105,114 +101,105 @@ export function PublishedFormClient({ initialForm, slug }: PublishedFormClientPr
     );
   }
 
-  const sections = form.sections || [];
-  const fields = form.fields || [];
-  const unassignedFields = fields.filter(
-    (f) => !f.section_id || !sections.some((s) => s.id === f.section_id)
-  );
-
-  const rootItems = [
-    ...sections.map((s) => ({
-      type: 'section' as const,
-      id: s.id,
-      position: s.position ?? 0,
-      section: s,
-    })),
-    ...unassignedFields.map((f) => ({
-      type: 'field' as const,
-      id: f.id,
-      position: f.position ?? 0,
-      field: f,
-    })),
-  ].sort((a, b) => {
-    if (a.position !== b.position) return a.position - b.position;
-    return a.type === 'section' ? -1 : 1;
-  });
-
-  const allFields = React.useMemo(() => {
-    const list: FieldsResponse[] = [...(form.fields || [])];
-    (form.sections || []).forEach((sec) => {
-      (sec.fields || []).forEach((f) => {
-        if (!list.some((existing) => existing.id === f.id)) {
-          list.push(f);
-        }
-      });
-    });
-    return list;
-  }, [form.fields, form.sections]);
-
   const handleInputChange = (fieldId: string, val: unknown) => {
-    setAnswers((prev) => ({ ...prev, [fieldId]: val }));
+    const nextAnswers = { ...answers, [fieldId]: val };
+    setAnswers(nextAnswers);
+
+    const nextVisibility = computeFieldVisibility(allFields, nextAnswers);
+
+    setErrors((prev) => {
+      let modified = false;
+      const next = { ...prev };
+
+      // Clear any errors for now-hidden fields
+      for (const errFieldId of Object.keys(next)) {
+        if (nextVisibility[errFieldId] === false) {
+          delete next[errFieldId];
+          modified = true;
+        }
+      }
+
+      // Re-validate current field if it had an error
+      if (next[fieldId]) {
+        const targetField = allFields.find((f) => f.id === fieldId);
+        if (targetField) {
+          const fieldError = validateSingleField(targetField, val);
+          if (!fieldError) {
+            delete next[fieldId];
+            modified = true;
+          } else if (next[fieldId] !== fieldError) {
+            next[fieldId] = fieldError;
+            modified = true;
+          }
+        }
+      }
+
+      return modified ? next : prev;
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validate required fields
-    for (const field of allFields) {
-      if (field.is_required) {
-        const val = answers[field.id];
-        const isEmpty =
-          val === undefined ||
-          val === null ||
-          val === '' ||
-          (Array.isArray(val) && val.length === 0);
-        if (isEmpty) {
-          toast.error(`Please answer the required field: "${field.label || 'Question'}"`);
-          return;
-        }
-      }
+    const visibility = computeFieldVisibility(allFields, answers);
+
+    // Validate all form fields against required state and validation_rules
+    const validation = validateAllFormFields(allFields, answers, visibility);
+    if (!validation.isValid) {
+      setErrors(validation.errors);
+      toast.error(
+        validation.firstErrorMessage || 'Please fix the errors in the form before submitting.'
+      );
+      return;
     }
 
+    setErrors({});
+
     try {
-      const formattedAnswers: AnswerResponse[] = Object.entries(answers)
-        .filter(([_, val]) => {
-          if (val === undefined || val === null || val === '') return false;
-          if (Array.isArray(val) && val.length === 0) return false;
-          return true;
-        })
-        .map(([fieldId, val]) => {
-          const field = allFields.find((f) => f.id === fieldId);
-          const isMultiple = Boolean(field?.is_multiple);
+      // Manage file uploads before form submission (only for visible fields)
+      const uploadedMap = new Map<string, UploadedFileResponse[]>();
+      const fileUploadFields = allFields.filter(
+        (f) => f.field_type === 'FILE_UPLOAD' && visibility[f.id] !== false
+      );
+      const fieldsToUpload: { fieldId: string; files: File[] }[] = [];
 
-          let answer_text: string | null = null;
-          let answer_json: Record<string, unknown> | unknown[] | null = null;
+      for (const field of fileUploadFields) {
+        const rawVal = answers[field.id];
+        const items: FileMetadata[] = Array.isArray(rawVal)
+          ? rawVal
+          : rawVal && typeof rawVal === 'object'
+          ? [rawVal as FileMetadata]
+          : [];
 
-          if (Array.isArray(val)) {
-            // Array of items (multiple choice strings or file metadata objects)
-            answer_text = val
-              .map((item) =>
-                typeof item === 'object' && item !== null && 'name' in item
-                  ? (item as { name: string }).name
-                  : String(item)
-              )
-              .join(', ');
-            answer_json = val;
-          } else if (val && typeof val === 'object') {
-            // Object (e.g. single file upload metadata or dictionary)
-            const obj = val as Record<string, unknown>;
-            answer_text = typeof obj.name === 'string' ? obj.name : JSON.stringify(obj);
-            if (isMultiple) {
-              answer_json = [obj];
-            } else {
-              answer_json = obj;
-            }
-          } else {
-            // Primitive (string, number, boolean)
-            answer_text = String(val);
-            if (isMultiple) {
-              answer_json = [val];
-            } else {
-              answer_json = null;
-            }
-          }
+        const filesToUpload: File[] = items
+          .map((item) => item.file)
+          .filter((f): f is File => f instanceof File);
 
-          return {
-            field_id: fieldId,
-            answer_text,
-            answer_json,
-          };
-        });
+        if (filesToUpload.length > 0) {
+          fieldsToUpload.push({ fieldId: field.id, files: filesToUpload });
+        } else if (items.length > 0) {
+          uploadedMap.set(field.id, items as unknown as UploadedFileResponse[]);
+        }
+      }
+
+      if (fieldsToUpload.length > 0) {
+        setIsUploading(true);
+        for (const { fieldId, files } of fieldsToUpload) {
+          const uploadRes = await formsService.uploadFiles(files);
+          const existing = uploadedMap.get(fieldId) || [];
+          uploadedMap.set(fieldId, [
+            ...existing,
+            ...(Array.isArray(uploadRes) ? uploadRes : [uploadRes]),
+          ]);
+        }
+      }
+
+      const formattedAnswers = formatAnswersForSubmission(
+        answers,
+        allFields,
+        uploadedMap,
+        visibility
+      );
 
       await submitForm({
         formId: form.id,
@@ -231,225 +218,23 @@ export function PublishedFormClient({ initialForm, slug }: PublishedFormClientPr
 
       setIsSubmitted(true);
       toast.success('Your response has been recorded!');
-    } catch {
-      // Handled with error toast in apiClient
+    } catch (err: unknown) {
+      console.error('Submission failed:', err);
+      const msg =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as { message: unknown }).message)
+          : 'Failed to submit response. Please check your answers and try again.';
+      toast.error(msg);
+      // DO NOT reset answers or form state on submission failure!
+    } finally {
+      setIsUploading(false);
     }
   };
 
   const handleResetForAnotherResponse = () => {
     setAnswers({});
+    setErrors({});
     setIsSubmitted(false);
-  };
-
-  const renderField = (field: FieldsResponse) => {
-    return (
-      <div key={field.id} className="space-y-1.5">
-        <div className="flex items-start justify-between gap-2">
-          <Label className="text-xs font-semibold text-foreground">
-            {field.label || 'Untitled Question'}
-            {field.is_required && (
-              <span className="text-destructive ml-1" title="Required">*</span>
-            )}
-          </Label>
-        </div>
-
-        {field.description && (
-          <p className="text-[11px] text-muted-foreground">{field.description}</p>
-        )}
-
-        <div className="pt-1.5">
-          {['SHORT_TEXT', 'EMAIL', 'PHONE', 'URL'].includes(field.field_type) && (
-            <Input
-              type={field.field_type === 'EMAIL' ? 'email' : field.field_type === 'PHONE' ? 'tel' : 'text'}
-              placeholder={field.placeholder || 'Type your answer here...'}
-              value={String(answers[field.id] || '')}
-              onChange={(e) => handleInputChange(field.id, e.target.value)}
-              required={field.is_required}
-              className="h-10 text-[13px] py-2 px-3 rounded-md"
-            />
-          )}
-
-          {field.field_type === 'LONG_TEXT' && (
-            <Textarea
-              rows={3}
-              placeholder={field.placeholder || 'Type your answer here...'}
-              value={String(answers[field.id] || '')}
-              onChange={(e) => handleInputChange(field.id, e.target.value)}
-              required={field.is_required}
-              className="text-[13px] py-2 px-3 rounded-md"
-            />
-          )}
-
-          {field.field_type === 'NUMBER' && (
-            <Input
-              type="number"
-              placeholder={field.placeholder || '0'}
-              value={String(answers[field.id] || '')}
-              onChange={(e) => handleInputChange(field.id, e.target.value)}
-              required={field.is_required}
-              className="h-10 text-[13px] py-2 px-3 rounded-md"
-            />
-          )}
-
-          {field.field_type === 'DATE' && (
-            <DatePicker
-              id={field.id}
-              value={String(answers[field.id] || '')}
-              onChange={(val) => handleInputChange(field.id, val)}
-              placeholder={field.placeholder || 'Select date...'}
-            />
-          )}
-
-          {field.field_type === 'TIME' && (
-            <TimePicker
-              id={field.id}
-              value={String(answers[field.id] || '')}
-              onChange={(val) => handleInputChange(field.id, val)}
-              placeholder={field.placeholder || 'Select time...'}
-            />
-          )}
-
-          {field.field_type === 'DATE_TIME' && (
-            <DateTimePicker
-              id={field.id}
-              value={String(answers[field.id] || '')}
-              onChange={(val) => handleInputChange(field.id, val)}
-              placeholder={field.placeholder || 'Select date & time...'}
-            />
-          )}
-
-          {field.field_type === 'DROPDOWN' && (() => {
-            const options =
-              (Array.isArray(field.values) && field.values.length > 0
-                ? field.values
-                : (field.settings?.options as string[])) || ['Option 1', 'Option 2', 'Option 3'];
-
-            if (field.is_multiple) {
-              const selectedList = Array.isArray(answers[field.id])
-                ? (answers[field.id] as string[])
-                : answers[field.id]
-                ? [String(answers[field.id])]
-                : [];
-              return (
-                <div className="pt-1">
-                  <MultiSelect
-                    id={field.id}
-                    options={options}
-                    selected={selectedList}
-                    onChange={(val) => handleInputChange(field.id, val)}
-                    placeholder={field.placeholder || 'Select options...'}
-                  />
-                </div>
-              );
-            }
-
-            return (
-              <div className="pt-1">
-                <Select
-                  value={String(answers[field.id] || '')}
-                  onValueChange={(val) => handleInputChange(field.id, val)}
-                >
-                  <SelectTrigger className="w-full text-[13px] h-10 bg-card">
-                    <SelectValue placeholder={field.placeholder || 'Select an option...'} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {options.map((opt, optIdx) => (
-                      <SelectItem key={optIdx} value={opt} className="text-xs sm:text-sm">
-                        {opt}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            );
-          })()}
-
-          {['SINGLE_CHOICE', 'MULTIPLE_CHOICE', 'CHECKBOX'].includes(field.field_type) && (() => {
-            const options =
-              (Array.isArray(field.values) && field.values.length > 0
-                ? field.values
-                : (field.settings?.options as string[])) || ['Option 1', 'Option 2', 'Option 3'];
-
-            const isMultiple = field.field_type === 'SINGLE_CHOICE' ? false : field.is_multiple !== false;
-            const selectedList: string[] = Array.isArray(answers[field.id])
-              ? (answers[field.id] as string[])
-              : answers[field.id]
-              ? [String(answers[field.id])]
-              : [];
-
-            return (
-              <div className="space-y-1.5 pt-1">
-                {options.map((opt, optIdx) => {
-                  const isChecked = isMultiple
-                    ? selectedList.includes(opt)
-                    : answers[field.id] === opt;
-
-                  return (
-                    <label
-                      key={optIdx}
-                      className={`flex items-center gap-2.5 p-2.5 rounded-md border text-xs cursor-pointer transition-colors ${
-                        isChecked
-                          ? 'border-primary/50 bg-primary/5 text-foreground'
-                          : 'border-border bg-muted/15 hover:bg-muted/30 text-foreground'
-                      }`}
-                    >
-                      <input
-                        type={isMultiple ? 'checkbox' : 'radio'}
-                        name={`field_${field.id}`}
-                        value={opt}
-                        checked={isChecked}
-                        onChange={() => {
-                          if (isMultiple) {
-                            const next = isChecked
-                              ? selectedList.filter((item) => item !== opt)
-                              : [...selectedList, opt];
-                            handleInputChange(field.id, next);
-                          } else {
-                            handleInputChange(field.id, opt);
-                          }
-                        }}
-                        className={`size-3.5 accent-primary cursor-pointer ${isMultiple ? 'rounded-xs' : 'rounded-full'}`}
-                      />
-                      <span className="text-foreground">{opt}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            );
-          })()}
-
-          {field.field_type === 'RATING' && (
-            <div className="flex items-center gap-2 pt-1">
-              {[1, 2, 3, 4, 5].map((star) => (
-                <button
-                  key={star}
-                  type="button"
-                  onClick={() => handleInputChange(field.id, star)}
-                  className="cursor-pointer p-1 rounded-sm hover:scale-110 transition-transform"
-                >
-                  <Star
-                    className={`size-5 ${
-                      Number(answers[field.id] || 0) >= star
-                        ? 'text-amber-500 fill-amber-500'
-                        : 'text-muted-foreground/40'
-                    }`}
-                  />
-                </button>
-              ))}
-            </div>
-          )}
-
-          {field.field_type === 'FILE_UPLOAD' && (
-            <FileUploadField
-              id={field.id}
-              isMultiple={Boolean(field.is_multiple)}
-              value={answers[field.id] as FileMetadata[] | FileMetadata | null}
-              onChange={(val) => handleInputChange(field.id, val)}
-            />
-          )}
-        </div>
-      </div>
-    );
   };
 
   return (
@@ -467,6 +252,19 @@ export function PublishedFormClient({ initialForm, slug }: PublishedFormClientPr
               {form.form_settings?.confirmation_message ||
                 'Your response has been successfully submitted and recorded.'}
             </p>
+            {form.form_type === 'QUIZ' && form.quiz_settings?.show_score_after_submissions && (
+              <div className="p-3.5 rounded-xl bg-muted/50 border border-border max-w-sm mx-auto text-center space-y-1">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider font-mono">
+                  Submission Status
+                </span>
+                <div className="text-sm font-semibold text-foreground">
+                  Responses Recorded
+                </div>
+                <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/10 text-emerald-600">
+                  Passing Score Threshold: {form.quiz_settings.passing_score}%
+                </span>
+              </div>
+            )}
             {form.form_settings?.allow_multiple_submission && (
               <div className="pt-2">
                 <Button
@@ -498,56 +296,16 @@ export function PublishedFormClient({ initialForm, slug }: PublishedFormClientPr
               )}
             </div>
 
-            {/* Questions & Sections List */}
-            {rootItems.length === 0 ? (
-              <div className="p-8 text-center text-xs text-muted-foreground border border-dashed border-border rounded-md">
-                This form currently has no questions.
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {rootItems.map((item) => {
-                  if (item.type === 'section') {
-                    const sec = item.section;
-                    if (sec.is_visible === false) return null;
-                    const secFields = fields
-                      .filter((f) => f.section_id === sec.id)
-                      .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-                    if (secFields.length === 0) return null;
-
-                    const gridClass = getSectionGridClass(
-                      sec.layout_type,
-                      sec.column_count || 1,
-                      (sec.layout_config as { gap?: string })?.gap || 'md'
-                    );
-
-                    return (
-                      <div key={sec.id} className="space-y-4 pt-4 border-t border-border/70 first:border-t-0 first:pt-0">
-                        <div>
-                          <h2 className="font-heading text-base font-bold text-foreground">
-                            {sec.title}
-                          </h2>
-                          {sec.description && (
-                            <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                              {sec.description}
-                            </p>
-                          )}
-                        </div>
-
-                        <div className={gridClass}>
-                          {secFields.map((field) => renderField(field))}
-                        </div>
-                      </div>
-                    );
-                  } else {
-                    return (
-                      <div key={item.field.id} className="pt-2 first:pt-0">
-                        {renderField(item.field)}
-                      </div>
-                    );
-                  }
-                })}
-              </div>
-            )}
+            {/* Questions & Sections Body (Modularized) */}
+            <FormBodyRenderer
+              sections={form.sections}
+              fields={allFields}
+              answers={answers}
+              errors={errors}
+              onInputChange={handleInputChange}
+              device="desktop"
+              disabled={isSubmitting || isUploading}
+            />
 
             {/* Submit Bar */}
             <div className="pt-4 border-t border-border flex items-center justify-between">
@@ -557,10 +315,15 @@ export function PublishedFormClient({ initialForm, slug }: PublishedFormClientPr
 
               <Button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || isUploading}
                 className="cursor-pointer text-xs font-semibold py-2.5 px-6 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground"
               >
-                {isSubmitting ? (
+                {isUploading ? (
+                  <>
+                    <Loader2 className="size-3 animate-spin mr-1.5" />
+                    Uploading files...
+                  </>
+                ) : isSubmitting ? (
                   <>
                     <Loader2 className="size-3 animate-spin mr-1.5" />
                     Submitting...
@@ -582,4 +345,3 @@ export function PublishedFormClient({ initialForm, slug }: PublishedFormClientPr
     </div>
   );
 }
-

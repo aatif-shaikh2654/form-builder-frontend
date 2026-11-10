@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { AiFormGeneratorCard } from '@/features/forms/components/AiFormGeneratorCard';
 import {
   Sparkles,
   LayoutGrid,
@@ -18,50 +19,44 @@ import {
   ShieldCheck,
   Clock,
   Check,
+  Plus,
 } from 'lucide-react';
 
 export default function HomePage() {
   return (
     <div className="space-y-16 pb-16">
-      {/* Hero Section - Centered Text UI with Solid Accents */}
-      <section className="pt-8 sm:pt-12 pb-4 text-center max-w-4xl mx-auto space-y-6">
-        {/* Centered Solid Pill Badge (No Gradients, No Shadow) */}
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-semibold">
-          <Sparkles className="size-3.5 text-blue-600 dark:text-blue-400" />
-          <span>FormCraft Studio • Next-Gen Form &amp; Quiz Engine</span>
-        </div>
-
-        {/* Big Centered Headline with Solid Primary Accent */}
-        <h1 className="font-heading text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-foreground leading-[1.14]">
-          Build Forms, Quizzes &amp; Surveys{' '}
-          <span className="text-primary">That Convert</span>
+      {/* Hero Section - ChatGPT-style Minimalist UI */}
+      <section className="pt-12 sm:pt-20 pb-4 text-center max-w-4xl mx-auto space-y-6">
+        {/* Single-line Title */}
+        <h1 className="font-heading text-3xl sm:text-4xl md:text-5xl font-semibold tracking-tight text-foreground">
+          What form can I build for you today?
         </h1>
 
-        {/* Centered Subtitle */}
-        <p className="text-base sm:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-          Create dynamic multi-step forms, scored assessments with automated passing logic, customer surveys, and instant polls in minutes.
-        </p>
+        {/* Big Width ChatGPT-style Chat Input */}
+        <div className="w-full max-w-4xl mx-auto">
+          <AiFormGeneratorCard />
+        </div>
 
-        {/* Centered Action Buttons */}
-        <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+        {/* Manual Creation / Secondary Action Buttons */}
+        <div className="flex flex-wrap items-center justify-center gap-3 pt-4">
           <Link href="/forms/new">
             <Button
-              size="lg"
-              className="cursor-pointer gap-2 text-sm font-semibold h-11 px-6 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground"
+              variant="outline"
+              size="sm"
+              className="cursor-pointer gap-2 text-xs font-medium h-9 px-4 rounded-md border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground"
             >
-              <Sparkles className="size-4" />
-              Create Your First Form
-              <ArrowRight className="size-3.5" />
+              <Plus className="size-3.5" />
+              Build from Scratch Manually
             </Button>
           </Link>
 
           <Link href="/forms">
             <Button
-              variant="outline"
-              size="lg"
-              className="cursor-pointer gap-2 text-sm font-semibold h-11 px-6 rounded-md border-border bg-card hover:bg-muted text-foreground"
+              variant="ghost"
+              size="sm"
+              className="cursor-pointer gap-2 text-xs font-medium h-9 px-4 rounded-md text-muted-foreground hover:text-foreground"
             >
-              <LayoutGrid className="size-4" />
+              <LayoutGrid className="size-3.5" />
               Open Forms Workspace
             </Button>
           </Link>

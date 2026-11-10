@@ -46,20 +46,27 @@ export const SectionSettingsForm: React.FC<SectionSettingsFormProps> = ({
   );
   const [isVisible, setIsVisible] = useState<boolean>(section.is_visible !== false);
 
-  const handleSave = () => {
-    onSave(section.id, {
-      title: title.trim() || section.title,
-      description: description.trim() || null,
-      layout_type: layoutType,
-      column_count: columnCount,
-      layout_config: {
-        ...(section.layout_config || {}),
-        gap,
-        collapse_on_mobile: collapseOnMobile,
-      },
-      is_visible: isVisible,
-    });
-    onCancel();
+  const handleSave = async () => {
+    try {
+      await Promise.resolve(
+        onSave(section.id, {
+          title: title.trim() || section.title,
+          description: description.trim() || null,
+          layout_type: layoutType,
+          column_count: columnCount,
+          layout_config: {
+            ...(section.layout_config || {}),
+            gap,
+            collapse_on_mobile: collapseOnMobile,
+          },
+          is_visible: isVisible,
+        })
+      );
+      onCancel();
+    } catch (err: unknown) {
+      console.error('Failed to save section settings:', err);
+      // Keep dialog/sheet open on error!
+    }
   };
 
   return (

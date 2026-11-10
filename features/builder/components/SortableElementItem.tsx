@@ -23,8 +23,10 @@ import {
   Calendar,
   Clock,
   ChevronDown,
+  GitBranch,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
@@ -161,10 +163,16 @@ export const SortableElementItem: React.FC<SortableElementItemProps> = ({ field,
   // Extract choice options
   const options: string[] =
     Array.isArray(field.values) && field.values.length > 0
-      ? field.values
+      ? field.values.map((opt) =>
+          typeof opt === 'object' && opt !== null
+            ? (opt as { label?: string; value?: string }).label ||
+              (opt as { label?: string; value?: string }).value ||
+              ''
+            : String(opt)
+        )
       : Array.isArray(field.settings?.options) && (field.settings.options as string[]).length > 0
       ? (field.settings.options as string[])
-      : ['Option 1', 'Option 2', 'Option 3'];
+      : [];
 
   const handleUpdateOption = (index: number, newText: string) => {
     const updated = [...options];
@@ -173,6 +181,10 @@ export const SortableElementItem: React.FC<SortableElementItemProps> = ({ field,
     updateField(field.id, {
       settings: newSettings,
       values: updated,
+      is_multiple:
+        field.field_type === 'MULTIPLE_CHOICE'
+          ? true
+          : field.is_multiple,
     });
   };
 
@@ -183,6 +195,10 @@ export const SortableElementItem: React.FC<SortableElementItemProps> = ({ field,
     updateField(field.id, {
       settings: newSettings,
       values: updated,
+      is_multiple:
+        field.field_type === 'MULTIPLE_CHOICE'
+          ? true
+          : field.is_multiple,
     });
   };
 
@@ -197,6 +213,10 @@ export const SortableElementItem: React.FC<SortableElementItemProps> = ({ field,
     updateField(field.id, {
       settings: newSettings,
       values: updated,
+      is_multiple:
+        field.field_type === 'MULTIPLE_CHOICE'
+          ? true
+          : field.is_multiple,
     });
   };
 
@@ -356,11 +376,23 @@ export const SortableElementItem: React.FC<SortableElementItemProps> = ({ field,
               className="font-heading font-semibold text-xs sm:text-sm text-foreground cursor-pointer hover:text-primary transition-colors flex items-center gap-1.5 group/label w-full break-words"
               title="Click to edit question text"
             >
-              <span>{field.label || 'Untitled Question'}</span>
-              {field.is_required && (
-                <span className="text-destructive font-bold text-xs" title="Required field">
-                  *
-                </span>
+              <span className="inline-flex items-baseline">
+                <span>{field.label || 'Untitled Question'}</span>
+                {field.is_required && (
+                  <span className="text-destructive font-bold text-xs ml-0.5" title="Required field">
+                    *
+                  </span>
+                )}
+              </span>
+              {Array.isArray(field.conditions) && field.conditions.length > 0 && (
+                <Badge
+                  variant="outline"
+                  className="h-4 px-1 text-[9px] font-mono gap-0.5 text-primary border-primary/30 bg-primary/5 select-none"
+                  title={`${field.conditions.length} conditional rule(s) configured`}
+                >
+                  <GitBranch className="size-2.5" />
+                  <span>{field.conditions.length}</span>
+                </Badge>
               )}
             </h4>
           )}

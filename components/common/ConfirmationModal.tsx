@@ -58,6 +58,15 @@ export const ConfirmationModal: React.FC = () => {
 
   const { icon, iconBg, confirmButtonVariant } = getVariantStyles();
 
+  const onConfirm = async () => {
+    try {
+      await handleConfirm();
+    } catch (err: unknown) {
+      console.error('Confirmation action failed:', err);
+      // Keeps modal open on error
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={setOpen}>
       <DialogContent className="sm:max-w-md p-6 border-border rounded-md">
@@ -95,7 +104,7 @@ export const ConfirmationModal: React.FC = () => {
             type="button"
             variant={confirmButtonVariant}
             size="sm"
-            onClick={handleConfirm}
+            onClick={onConfirm}
             disabled={isLoading}
             className="cursor-pointer text-xs font-semibold h-8 px-4 gap-1.5 rounded-md"
           >

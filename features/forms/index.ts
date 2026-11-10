@@ -4,3 +4,4 @@ export * from './constants/forms.constants';
 export * from './components/FormCard';
 export * from './components/FormCardSkeleton';
 export * from './components/FormList';
+export * from './components/AiFormGeneratorCard';

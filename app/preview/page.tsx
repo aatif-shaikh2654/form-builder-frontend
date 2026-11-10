@@ -1,7 +1,7 @@
-import React, { Suspense } from 'react';
+import React, { Suspense, cache } from 'react';
 import { cookies } from 'next/headers';
 import type { Metadata } from 'next';
-import { formsService } from '@/features/forms/services/formsService';
+import { formsService, normalizeDraftForm } from '@/features/forms/services/formsService';
 import { PreviewClient, PreviewSkeleton } from './PreviewClient';
 
 export const instant = false;
@@ -9,6 +9,11 @@ export const instant = false;
 interface PreviewPageProps {
   searchParams: Promise<{ id?: string }>;
 }
+
+// React cache ensures for a single request, GET /form/{id}/get-draft is executed exactly once
+const getCachedDraftForm = cache(async (id: string, cookieHeader: string) => {
+  return formsService.getServerDraftForm(id, cookieHeader);
+});
 
 /**
  * Server-side dynamic metadata for Preview
@@ -27,7 +32,9 @@ export async function generateMetadata({
   const cookieStore = await cookies();
   const cookieHeader = cookieStore.toString();
 
-  const form = await formsService.getServerFormById(id, cookieHeader);
+  // Call only the draft API (deduplicated by cache)
+  const rawDraft = await getCachedDraftForm(id, cookieHeader);
+  const form = normalizeDraftForm(rawDraft, id);
 
   return {
     title: form?.title
@@ -38,20 +45,23 @@ export async function generateMetadata({
 }
 
 /**
- * Server-side Component: fetches form details directly on the server only,
- * forwarding all client request cookies to the backend.
+ * Server-side Component: fetches draft form directly on the server only,
+ * calling GET /api/v1/form/{form_id}/get-draft with forwarded client request cookies.
+ * NO fallback, NO extra API calls, NO dummy data.
  */
 async function PreviewServerContent({ searchParams }: PreviewPageProps) {
   const { id } = await searchParams;
   const cookieStore = await cookies();
   const cookieHeader = cookieStore.toString();
 
-  // Fetch form details directly on the server (includes draft_version & published_version)
-  const initialForm = id
-    ? await formsService.getServerFormById(id, cookieHeader)
+  // Call only the draft API: GET /api/v1/form/{form_id}/get-draft
+  const rawDraft = id
+    ? await getCachedDraftForm(id, cookieHeader)
     : null;
 
-  return <PreviewClient initialForm={initialForm} formIdParam={id || null} />;
+  const initialForm = rawDraft ? normalizeDraftForm(rawDraft, id!) : null;
+
+  return <PreviewClient initialForm={initialForm} />;
 }
 
 export default async function PreviewPage(props: PreviewPageProps) {

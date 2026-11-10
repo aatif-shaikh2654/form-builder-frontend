@@ -6,6 +6,7 @@ import { ElementPalette } from './ElementPalette';
 import { BuilderCanvas } from './BuilderCanvas';
 import { PropertiesPanel } from './PropertiesPanel';
 import { FormPreview } from './FormPreview';
+import { FormSubmissionsView } from './FormSubmissionsView';
 import { BuilderToolbar } from './BuilderToolbar';
 import { FormSettingsView } from './FormSettingsView';
 import { QuizSettingsView } from './QuizSettingsView';
@@ -38,8 +39,11 @@ export const FormBuilderView: React.FC = () => {
     <div className="space-y-4">
       <BuilderToolbar />
 
-      {/* When full preview mode is active */}
-      {activeBuilderTab === 'preview' ? (
+      {/* When submissions tab is active */}
+      {activeBuilderTab === 'submits' ? (
+        <FormSubmissionsView />
+      ) : activeBuilderTab === 'preview' ? (
+        /* When full preview mode is active */
         <FormPreview />
       ) : (
         /* Main 2-column layout: Left Palette (fields & sections), Right Canvas (extra width) */

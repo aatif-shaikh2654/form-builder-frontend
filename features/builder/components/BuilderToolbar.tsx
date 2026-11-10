@@ -7,11 +7,15 @@ import { useBuilderStore, type BuilderActiveTab } from '../store/builderStore';
 import {
   useSingleForm,
   useCreateFormMutation,
+  useDeleteFormMutation,
 } from '@/features/forms/hooks/useForms';
+import { formsService } from '@/features/forms/services/formsService';
 import { useUser } from '@/context/UserContext';
 import { FORM_STATUS_STYLES } from '@/features/forms/constants/forms.constants';
 import { useConfirmationStore } from '@/store/useConfirmationStore';
-import type { SaveFormPayload, FieldsResponse } from '@/types/api.types';
+import { validateFormSettings, validateQuizSettings } from '../utils/settingsValidation';
+import { areFormSettingsEqual, areQuizSettingsEqual } from '../utils/settingsComparison';
+import type { SaveFormPayload, FieldsResponse, FieldOptionItem } from '@/types/api.types';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from 'cn';
 import { Badge } from '@/components/ui/badge';
@@ -27,6 +31,8 @@ import {
   Save,
   Check,
   Share2,
+  Table2,
+  Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ShareLiveFormDialog } from './ShareLiveFormDialog';
@@ -38,9 +44,17 @@ export const BuilderToolbar: React.FC = () => {
     title,
     description,
     formType,
+    initialFormType,
     status,
+    initialStatus,
     setStatus,
     slug,
+    formSettings,
+    initialFormSettings,
+    isFormSettingsEdited,
+    quizSettings,
+    initialQuizSettings,
+    isQuizSettingsEdited,
     activeBuilderTab,
     setActiveBuilderTab,
     activeDrawer,
@@ -52,10 +66,18 @@ export const BuilderToolbar: React.FC = () => {
     markSaved,
     isTitleEdited,
     isDescriptionEdited,
+    resetBuilder,
   } = useBuilderStore();
 
   const { mutateAsync: createForm } = useCreateFormMutation();
-  const { form, saveDraft, isSavingDraft, publishForm, isPublishing } = useSingleForm(formId);
+  const { mutateAsync: deleteFormApi, isPending: isDeletingForm } = useDeleteFormMutation();
+  const {
+    form,
+    saveDraft,
+    isSavingDraft,
+    publishForm,
+    isPublishing,
+  } = useSingleForm(formId);
 
   // Directly check published_version and draft_version from form detail API
   const publishedVersion = form?.published_version ?? null;
@@ -100,25 +122,35 @@ export const BuilderToolbar: React.FC = () => {
     onClick: () => void;
     isActive: boolean;
   }[] = [
-    {
-      id: 'canvas',
-      label: `Canvas (${fields.length})`,
-      icon: Layers,
-      onClick: () => {
-        setActiveBuilderTab('canvas');
-        setActiveDrawer(null);
+      {
+        id: 'canvas',
+        label: `Canvas (${fields.length})`,
+        icon: Layers,
+        onClick: () => {
+          setActiveBuilderTab('canvas');
+          setActiveDrawer(null);
+        },
+        isActive: activeDrawer === null && activeBuilderTab === 'canvas',
       },
-      isActive: activeDrawer === null && activeBuilderTab === 'canvas',
-    },
-    {
-      id: 'settings',
-      label: 'Form Settings',
-      icon: Settings,
-      onClick: () => setActiveDrawer('settings'),
-      isActive: activeDrawer === 'settings',
-    },
-    ...(formType === 'QUIZ'
-      ? [
+      {
+        id: 'submits',
+        label: 'Submissions',
+        icon: Table2,
+        onClick: () => {
+          setActiveBuilderTab('submits');
+          setActiveDrawer(null);
+        },
+        isActive: activeDrawer === null && activeBuilderTab === 'submits',
+      },
+      {
+        id: 'settings',
+        label: 'Form Settings',
+        icon: Settings,
+        onClick: () => setActiveDrawer('settings'),
+        isActive: activeDrawer === 'settings',
+      },
+      ...(formType === 'QUIZ'
+        ? [
           {
             id: 'quiz' as const,
             label: 'Quiz Rules',
@@ -127,12 +159,40 @@ export const BuilderToolbar: React.FC = () => {
             isActive: activeDrawer === 'quiz',
           },
         ]
-      : []),
-  ];
+        : []),
+    ];
 
   const handleSaveDraft = useCallback(async (): Promise<string | null> => {
     setIsSaving(true);
     try {
+      // 1. Validate Form Settings & Identity
+      const formSettingsValidation = validateFormSettings({
+        title,
+        submission_limit: formSettings.submission_limit,
+        start_at: formSettings.start_at,
+        end_at: formSettings.end_at,
+        confirmation_message: formSettings.confirmation_message,
+      });
+      if (!formSettingsValidation.isValid) {
+        const firstMsg = Object.values(formSettingsValidation.errors)[0];
+        toast.error(`Form Settings: ${firstMsg}`);
+        return null;
+      }
+
+      // 2. Validate Quiz Rules if QUIZ type
+      if (formType === 'QUIZ') {
+        const quizSettingsValidation = validateQuizSettings({
+          time_limit: quizSettings.time_limit,
+          passing_score: quizSettings.passing_score,
+          total_attempts: quizSettings.total_attempts,
+        });
+        if (!quizSettingsValidation.isValid) {
+          const firstMsg = Object.values(quizSettingsValidation.errors)[0];
+          toast.error(`Quiz Rules: ${firstMsg}`);
+          return null;
+        }
+      }
+
       let currentFormId = formId;
 
       if (!currentFormId) {
@@ -150,6 +210,58 @@ export const BuilderToolbar: React.FC = () => {
         }
       }
 
+      // Persist form settings and form metadata into the base form record ONLY if changed
+      const shouldUpdateFormSettings =
+        isFormSettingsEdited ||
+        isTitleEdited ||
+        isDescriptionEdited ||
+        formType !== initialFormType ||
+        status !== initialStatus ||
+        !areFormSettingsEqual(formSettings, initialFormSettings);
+
+      if (shouldUpdateFormSettings) {
+        const settingsPayload = {
+          title: isTitleEdited ? (title.trim() || null) : (title || null),
+          description: isDescriptionEdited ? (description.trim() || null) : (description || null),
+          form_type: formType,
+          status,
+          confirmation_message: formSettings.confirmation_message ?? null,
+          allow_multiple_submission: Boolean(formSettings.allow_multiple_submission ?? true),
+          require_login: Boolean(formSettings.require_login ?? false),
+          show_progress_bar: Boolean(formSettings.show_progress_bar ?? true),
+          shuffle_questions: Boolean(formSettings.shuffle_questions ?? false),
+          submission_limit:
+            formSettings.submission_limit !== undefined && formSettings.submission_limit !== null
+              ? Number(formSettings.submission_limit)
+              : null,
+          start_at: formSettings.start_at || null,
+          end_at: formSettings.end_at || null,
+        };
+
+        await formsService.editForm(currentFormId, settingsPayload);
+      }
+
+      // If QUIZ, also persist quiz rules ONLY if changed
+      const shouldUpdateQuizSettings =
+        formType === 'QUIZ' &&
+        (isQuizSettingsEdited || !areQuizSettingsEqual(quizSettings, initialQuizSettings));
+
+      if (shouldUpdateQuizSettings) {
+        await formsService.updateQuizSettings(currentFormId, {
+          time_limit:
+            quizSettings.time_limit !== undefined && quizSettings.time_limit !== null
+              ? Number(quizSettings.time_limit)
+              : null,
+          passing_score: String(quizSettings.passing_score ?? '70'),
+          total_attempts:
+            quizSettings.total_attempts !== undefined && quizSettings.total_attempts !== null
+              ? Number(quizSettings.total_attempts)
+              : null,
+          show_correct_answers: Boolean(quizSettings.show_correct_answers ?? true),
+          show_score_after_submissions: Boolean(quizSettings.show_score_after_submissions ?? true),
+        });
+      }
+
       const formatFieldForPayload = (f: FieldsResponse, position: number, sectionId: string | null) => {
         const isChoiceField =
           f.field_type === 'DROPDOWN' ||
@@ -161,12 +273,27 @@ export const BuilderToolbar: React.FC = () => {
           Array.isArray(f.values) && f.values.length > 0
             ? f.values
             : Array.isArray(f.settings?.options) && (f.settings.options as string[]).length > 0
-            ? (f.settings.options as string[])
-            : null;
+              ? (f.settings.options as string[])
+              : null;
 
-        const values: string[] | null = isChoiceField
-          ? rawValues || ['Option 1', 'Option 2', 'Option 3']
+        const values: FieldOptionItem[] | null = isChoiceField
+          ? (rawValues as FieldOptionItem[]) || []
           : null;
+
+        const isMultiple =
+          f.field_type === 'MULTIPLE_CHOICE'
+            ? true
+            : f.field_type === 'CHECKBOX'
+            ? true
+            : Boolean(f.is_multiple);
+
+        const conditions = (Array.isArray(f.conditions) ? f.conditions : []).map((c) => ({
+          id: c.id,
+          target_field_id: c.target_field_id,
+          condition_operator: c.condition_operator,
+          condition_value: c.condition_value,
+          action: c.action,
+        }));
 
         return {
           ...f,
@@ -174,7 +301,12 @@ export const BuilderToolbar: React.FC = () => {
           section_id: sectionId,
           position,
           values,
-          is_multiple: Boolean(f.is_multiple),
+          conditions,
+          settings: {
+            ...(f.settings || {}),
+            ...(values ? { options: values } : {}),
+          },
+          is_multiple: isMultiple,
         };
       };
 
@@ -186,6 +318,35 @@ export const BuilderToolbar: React.FC = () => {
       const payload: SaveFormPayload = {
         title: isTitleEdited ? (title.trim() || null) : null,
         description: isDescriptionEdited ? (description.trim() || null) : null,
+        form_settings: {
+          confirmation_message: formSettings.confirmation_message ?? null,
+          allow_multiple_submission: Boolean(formSettings.allow_multiple_submission ?? true),
+          require_login: Boolean(formSettings.require_login ?? false),
+          show_progress_bar: Boolean(formSettings.show_progress_bar ?? true),
+          shuffle_questions: Boolean(formSettings.shuffle_questions ?? false),
+          submission_limit:
+            formSettings.submission_limit !== undefined && formSettings.submission_limit !== null
+              ? Number(formSettings.submission_limit)
+              : null,
+          start_at: formSettings.start_at || null,
+          end_at: formSettings.end_at || null,
+        },
+        quiz_settings:
+          formType === 'QUIZ'
+            ? {
+                time_limit:
+                  quizSettings.time_limit !== undefined && quizSettings.time_limit !== null
+                    ? Number(quizSettings.time_limit)
+                    : null,
+                passing_score: String(quizSettings.passing_score ?? '70'),
+                total_attempts:
+                  quizSettings.total_attempts !== undefined && quizSettings.total_attempts !== null
+                    ? Number(quizSettings.total_attempts)
+                    : null,
+                show_correct_answers: Boolean(quizSettings.show_correct_answers ?? true),
+                show_score_after_submissions: Boolean(quizSettings.show_score_after_submissions ?? true),
+              }
+            : null,
         sections: sections.map((sec, idx) => ({
           ...sec,
           form_id: currentFormId!,
@@ -205,6 +366,11 @@ export const BuilderToolbar: React.FC = () => {
       return currentFormId;
     } catch (err: unknown) {
       console.error('Failed to save draft:', err);
+      const msg =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as { message: unknown }).message)
+          : 'Failed to save draft. Please check your inputs and try again.';
+      toast.error(msg);
       return null;
     } finally {
       setIsSaving(false);
@@ -216,6 +382,15 @@ export const BuilderToolbar: React.FC = () => {
     isTitleEdited,
     isDescriptionEdited,
     formType,
+    initialFormType,
+    status,
+    initialStatus,
+    formSettings,
+    initialFormSettings,
+    isFormSettingsEdited,
+    quizSettings,
+    initialQuizSettings,
+    isQuizSettingsEdited,
     sections,
     fields,
     createForm,
@@ -228,11 +403,40 @@ export const BuilderToolbar: React.FC = () => {
     try {
       let currentFormId = formId;
 
-      // Always save draft before publishing to guarantee latest canvas state is persisted
+      // Always save draft before publishing to guarantee latest canvas & settings state is persisted
       if (isDirty || !currentFormId) {
         const savedId = await handleSaveDraft();
-        if (savedId) {
-          currentFormId = savedId;
+        if (!savedId) {
+          // If draft save or settings validation failed, abort publish
+          return;
+        }
+        currentFormId = savedId;
+      } else {
+        // Even if not dirty, run settings validation before publishing live
+        const formSettingsValidation = validateFormSettings({
+          title,
+          submission_limit: formSettings.submission_limit,
+          start_at: formSettings.start_at,
+          end_at: formSettings.end_at,
+          confirmation_message: formSettings.confirmation_message,
+        });
+        if (!formSettingsValidation.isValid) {
+          const firstMsg = Object.values(formSettingsValidation.errors)[0];
+          toast.error(`Form Settings: ${firstMsg}`);
+          return;
+        }
+
+        if (formType === 'QUIZ') {
+          const quizSettingsValidation = validateQuizSettings({
+            time_limit: quizSettings.time_limit,
+            passing_score: quizSettings.passing_score,
+            total_attempts: quizSettings.total_attempts,
+          });
+          if (!quizSettingsValidation.isValid) {
+            const firstMsg = Object.values(quizSettingsValidation.errors)[0];
+            toast.error(`Quiz Rules: ${firstMsg}`);
+            return;
+          }
         }
       }
 
@@ -241,8 +445,8 @@ export const BuilderToolbar: React.FC = () => {
         const returnUrl = currentFormId
           ? `/builder?id=${currentFormId}`
           : typeof window !== 'undefined'
-          ? `${window.location.pathname}${window.location.search}`
-          : '/builder';
+            ? `${window.location.pathname}${window.location.search}`
+            : '/builder';
 
         toast.info('Please sign in or create an account to publish your form live.');
         router.push(`/login?redirect=${encodeURIComponent(returnUrl)}`);
@@ -253,6 +457,11 @@ export const BuilderToolbar: React.FC = () => {
         toast.error('Unable to publish: form ID could not be established.');
         return;
       }
+
+      // Check whether this form was already published previously based on published_version
+      const wasPreviouslyPublished = Boolean(
+        publishedVersion && publishedVersion > 0
+      );
 
       const published = await publishForm(currentFormId);
       setStatus('PUBLISHED');
@@ -268,7 +477,16 @@ export const BuilderToolbar: React.FC = () => {
         },
       });
 
-      setIsShareModalOpen(true);
+      // Automatically open the share live popup ONLY on the first publish
+      const isFirstPublish =
+        !wasPreviouslyPublished &&
+        (published?.published_version === 1 ||
+          published?.published_version === undefined ||
+          published?.published_version === null);
+
+      if (isFirstPublish) {
+        setIsShareModalOpen(true);
+      }
     } catch (err: unknown) {
       console.error('Failed to publish form:', err);
     } finally {
@@ -281,12 +499,14 @@ export const BuilderToolbar: React.FC = () => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
-        handleSaveDraft();
+        if (isDirty) {
+          handleSaveDraft();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleSaveDraft]);
+  }, [handleSaveDraft, isDirty]);
 
   const handleReturnToWorkspace = async (e: React.MouseEvent) => {
     if (isDirty) {
@@ -319,6 +539,44 @@ export const BuilderToolbar: React.FC = () => {
     }
   };
 
+  const handleDeleteForm = async () => {
+    const targetId = formId;
+    const ok = await confirm({
+      title: targetId ? 'Delete this form?' : 'Discard this form?',
+      description: targetId
+        ? `Are you sure you want to permanently delete "${title || 'Untitled Form'}"? All question fields, settings, and submitted responses will be permanently removed.`
+        : 'Are you sure you want to discard this new form and return to the forms workspace? Any changes you have made will be lost.',
+      confirmText: targetId ? 'Delete Form' : 'Discard Form',
+      cancelText: 'Cancel',
+      variant: 'destructive',
+      onConfirm: targetId
+        ? async () => {
+            try {
+              await deleteFormApi(targetId);
+              resetBuilder();
+              router.replace('/forms');
+            } catch (err: unknown) {
+              console.error('Failed to delete form:', err);
+              const msg =
+                err && typeof err === 'object' && 'message' in err
+                  ? String((err as { message: unknown }).message)
+                  : 'Failed to delete form. Please try again.';
+              toast.error(msg);
+              throw err; // Keeps confirmation modal open on error
+            }
+          }
+        : undefined,
+    });
+    if (!ok) return;
+
+    if (!targetId) {
+      toast.info('New form discarded');
+    }
+
+    resetBuilder();
+    router.replace('/forms');
+  };
+
   return (
     <div className="flex flex-col gap-2.5 p-3 bg-card rounded-md border border-border">
       {/* Top Bar: Back to forms + Form Title & Actions */}
@@ -347,9 +605,8 @@ export const BuilderToolbar: React.FC = () => {
               {formType}
             </Badge>
             <span
-              className={`text-[9px] font-semibold px-1.5 py-0.2 rounded-xs ${
-                FORM_STATUS_STYLES[status] || FORM_STATUS_STYLES.DRAFT
-              }`}
+              className={`text-[9px] font-semibold px-1.5 py-0.2 rounded-xs ${FORM_STATUS_STYLES[status] || FORM_STATUS_STYLES.DRAFT
+                }`}
             >
               {status}
             </span>
@@ -371,6 +628,24 @@ export const BuilderToolbar: React.FC = () => {
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* Delete Form Button */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleDeleteForm}
+            disabled={isDeletingForm || isSaving}
+            className="cursor-pointer gap-1.5 text-xs h-7.5 px-2.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+            title={formId ? 'Permanently delete this form' : 'Discard this form'}
+          >
+            {isDeletingForm ? (
+              <Loader2 className="size-3.5 animate-spin text-destructive" />
+            ) : (
+              <Trash2 className="size-3.5" />
+            )}
+            <span className="hidden sm:inline">Delete</span>
+          </Button>
+
           {fields.length > 0 && (
             <Button
               variant="ghost"
@@ -389,9 +664,9 @@ export const BuilderToolbar: React.FC = () => {
             variant="outline"
             size="sm"
             onClick={handleSaveDraft}
-            disabled={isSaving || isSavingDraft}
-            className="cursor-pointer gap-1.5 text-xs h-7.5 px-3 rounded-md border-border hover:border-primary/50 text-foreground"
-            title="Save all sections, fields, and changes (Cmd+S)"
+            disabled={isSaving || isSavingDraft || !isDirty}
+            className="cursor-pointer gap-1.5 text-xs h-7.5 px-3 rounded-md border-border hover:border-primary/50 text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            title={!isDirty ? 'No unsaved changes' : 'Save all sections, fields, and changes (Cmd+S)'}
           >
             {isSaving || isSavingDraft ? (
               <Loader2 className="size-3 animate-spin" />
@@ -446,17 +721,16 @@ export const BuilderToolbar: React.FC = () => {
             size="sm"
             onClick={handlePublish}
             disabled={isPublishDisabled}
-            className={`cursor-pointer gap-1.5 text-xs h-7.5 rounded-md font-semibold transition-all ${
-              isPublishDisabled && !isPublishing
-                ? 'opacity-55 cursor-not-allowed bg-muted text-muted-foreground hover:bg-muted border border-border shadow-none'
-                : 'bg-primary hover:bg-primary/90 text-primary-foreground'
-            }`}
+            className={`cursor-pointer gap-1.5 text-xs h-7.5 rounded-md font-semibold transition-all ${isPublishDisabled && !isPublishing
+              ? 'opacity-55 cursor-not-allowed bg-muted text-muted-foreground hover:bg-muted border border-border shadow-none'
+              : 'bg-primary hover:bg-primary/90 text-primary-foreground'
+              }`}
             title={
               isPublishing
                 ? 'Publishing form live...'
                 : isVersionsSame && !isDirty
-                ? 'Latest draft is already published live (no changes to publish)'
-                : 'Publish latest draft changes live'
+                  ? 'Latest draft is already published live (no changes to publish)'
+                  : 'Publish latest draft changes live'
             }
           >
             {isPublishing ? (
@@ -481,11 +755,10 @@ export const BuilderToolbar: React.FC = () => {
               key={tab.id}
               type="button"
               onClick={tab.onClick}
-              className={`cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all shrink-0 ${
-                isActive
-                  ? 'bg-primary/10 text-primary border border-primary/25 font-semibold'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-              }`}
+              className={`cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all shrink-0 ${isActive
+                ? 'bg-primary/10 text-primary border border-primary/25 font-semibold'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                }`}
             >
               <Icon className="size-3" />
               <span>{tab.label}</span>

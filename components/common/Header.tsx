@@ -65,10 +65,16 @@ export const Header: React.FC = () => {
   }
 
   const isWorkspace = pathname.startsWith('/forms');
+  const isBuilder = pathname.startsWith('/builder');
 
   return (
     <header className="sticky top-0 z-30 w-full border-b border-border bg-background/90 backdrop-blur-md">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 h-15 flex items-center justify-between">
+      <div
+        className={cn(
+          'w-full mx-auto px-4 sm:px-6 lg:px-8 h-15 flex items-center justify-between',
+          isBuilder ? 'max-w-none' : 'max-w-[1600px]'
+        )}
+      >
         {/* Brand */}
         <div className="flex items-center gap-8">
           <Link href="/" className="flex items-center gap-2.5 group cursor-pointer">

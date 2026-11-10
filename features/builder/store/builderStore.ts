@@ -3,6 +3,7 @@ import type {
   FormType,
   FormStatus,
   FieldsResponse,
+  FieldOptionItem,
   SectionResponse,
   FormSettingsResponse,
   QuizSettingsResponse,
@@ -12,8 +13,12 @@ import {
   DEFAULT_FORM_SETTINGS,
   DEFAULT_QUIZ_SETTINGS,
 } from '../constants/builder.constants';
+import {
+  areFormSettingsEqual,
+  areQuizSettingsEqual,
+} from '../utils/settingsComparison';
 
-export type BuilderActiveTab = 'canvas' | 'settings' | 'quiz' | 'preview';
+export type BuilderActiveTab = 'canvas' | 'settings' | 'quiz' | 'preview' | 'submits';
 
 interface BuilderState {
   // Current Form Data
@@ -25,14 +30,20 @@ interface BuilderState {
   isTitleEdited: boolean;
   isDescriptionEdited: boolean;
   formType: FormType;
+  initialFormType: FormType;
   status: FormStatus;
+  initialStatus: FormStatus;
   slug: string | null;
 
   // Children Entities
   sections: SectionResponse[];
   fields: FieldsResponse[];
   formSettings: Partial<FormSettingsResponse>;
+  initialFormSettings: Partial<FormSettingsResponse>;
+  isFormSettingsEdited: boolean;
   quizSettings: Partial<QuizSettingsResponse>;
+  initialQuizSettings: Partial<QuizSettingsResponse>;
+  isQuizSettingsEdited: boolean;
 
   // Selection & UI State
   selectedFieldId: string | null;
@@ -88,13 +99,19 @@ export const useBuilderStore = create<BuilderState>((set) => ({
   isTitleEdited: false,
   isDescriptionEdited: false,
   formType: 'FORM',
+  initialFormType: 'FORM',
   status: 'DRAFT',
+  initialStatus: 'DRAFT',
   slug: null,
 
   sections: [],
   fields: [],
   formSettings: DEFAULT_FORM_SETTINGS,
+  initialFormSettings: DEFAULT_FORM_SETTINGS,
+  isFormSettingsEdited: false,
   quizSettings: DEFAULT_QUIZ_SETTINGS,
+  initialQuizSettings: DEFAULT_QUIZ_SETTINGS,
+  isQuizSettingsEdited: false,
 
   selectedFieldId: null,
   selectedSectionId: null,
@@ -113,12 +130,18 @@ export const useBuilderStore = create<BuilderState>((set) => ({
       isTitleEdited: false,
       isDescriptionEdited: false,
       formType: type,
+      initialFormType: type,
       status: 'DRAFT',
+      initialStatus: 'DRAFT',
       slug: null,
       sections: [],
       fields: [],
       formSettings: DEFAULT_FORM_SETTINGS,
+      initialFormSettings: DEFAULT_FORM_SETTINGS,
+      isFormSettingsEdited: false,
       quizSettings: DEFAULT_QUIZ_SETTINGS,
+      initialQuizSettings: DEFAULT_QUIZ_SETTINGS,
+      isQuizSettingsEdited: false,
       selectedFieldId: null,
       selectedSectionId: null,
       editingSectionId: null,
@@ -131,11 +154,18 @@ export const useBuilderStore = create<BuilderState>((set) => ({
   loadForm: (form) => {
     const normalizeField = (f: FieldsResponse, defaultFormId: string | null, sectionId: string | null) => {
       const values =
-        Array.isArray(f.values) && f.values.length > 0
+        Array.isArray(f.values)
           ? f.values
-          : Array.isArray(f.settings?.options) && (f.settings.options as string[]).length > 0
-          ? (f.settings.options as string[])
+          : Array.isArray(f.settings?.options)
+          ? (f.settings.options as FieldOptionItem[])
           : null;
+
+      const isMultiple =
+        f.field_type === 'MULTIPLE_CHOICE'
+          ? true
+          : f.field_type === 'CHECKBOX'
+          ? true
+          : Boolean(f.is_multiple);
 
       const settings = {
         ...(f.settings || {}),
@@ -148,6 +178,7 @@ export const useBuilderStore = create<BuilderState>((set) => ({
         section_id: sectionId,
         values,
         settings,
+        is_multiple: isMultiple,
       };
     };
 
@@ -171,7 +202,9 @@ export const useBuilderStore = create<BuilderState>((set) => ({
       isTitleEdited: false,
       isDescriptionEdited: false,
       formType: form.form_type,
+      initialFormType: form.form_type,
       status: form.status,
+      initialStatus: form.status,
       slug: form.slug,
       sections: (form.sections || []).map((sec) => ({
         ...sec,
@@ -182,7 +215,11 @@ export const useBuilderStore = create<BuilderState>((set) => ({
       })),
       fields: allFields,
       formSettings: form.form_settings || DEFAULT_FORM_SETTINGS,
+      initialFormSettings: form.form_settings || DEFAULT_FORM_SETTINGS,
+      isFormSettingsEdited: false,
       quizSettings: form.quiz_settings || DEFAULT_QUIZ_SETTINGS,
+      initialQuizSettings: form.quiz_settings || DEFAULT_QUIZ_SETTINGS,
+      isQuizSettingsEdited: false,
       selectedFieldId: null,
       selectedSectionId: null,
       editingSectionId: null,
@@ -201,7 +238,9 @@ export const useBuilderStore = create<BuilderState>((set) => ({
           ? (formInput.data as SingleForm)
           : (formInput as SingleForm);
 
-      if (state.formId && form.id && form.id !== state.formId) return state;
+      if (!form || !form.id) return state;
+
+      const isSwitchingForm = Boolean(state.formId && form.id && form.id !== state.formId);
 
       const normalizeField = (f: FieldsResponse, defaultFormId: string | null, sectionId: string | null) => {
         const values =
@@ -209,7 +248,19 @@ export const useBuilderStore = create<BuilderState>((set) => ({
             ? f.values
             : Array.isArray(f.settings?.options) && (f.settings.options as string[]).length > 0
             ? (f.settings.options as string[])
+            : f.field_type === 'MULTIPLE_CHOICE' ||
+              f.field_type === 'SINGLE_CHOICE' ||
+              f.field_type === 'DROPDOWN' ||
+              f.field_type === 'CHECKBOX'
+            ? ['Option 1', 'Option 2', 'Option 3']
             : null;
+
+        const isMultiple =
+          f.field_type === 'MULTIPLE_CHOICE'
+            ? true
+            : f.field_type === 'CHECKBOX'
+            ? true
+            : Boolean(f.is_multiple);
 
         const settings = {
           ...(f.settings || {}),
@@ -222,6 +273,7 @@ export const useBuilderStore = create<BuilderState>((set) => ({
           section_id: sectionId,
           values,
           settings,
+          is_multiple: isMultiple,
         };
       };
 
@@ -239,23 +291,35 @@ export const useBuilderStore = create<BuilderState>((set) => ({
       for (const f of rawServerSecFields) fieldMap.set(f.id, f);
       const rawCombinedServerFields = Array.from(fieldMap.values());
 
-      // Preserve current user data: if server returns empty list but user added items in local state, NEVER reset!
-      const serverFields = rawCombinedServerFields.length > 0 ? rawCombinedServerFields : state.fields;
+      // Preserve current user data: if syncing same form and server returns empty list but user added items in local state, NEVER reset!
+      // But if switching to a different form, strictly use the new form's items!
+      const serverFields = isSwitchingForm
+        ? rawCombinedServerFields
+        : rawCombinedServerFields.length > 0
+        ? rawCombinedServerFields
+        : state.fields;
 
-      const serverSections =
-        rawServerSections.length > 0
-          ? rawServerSections.map((sec) => ({
-              ...sec,
-              layout_type: sec.layout_type || 'SINGLE_COLUMN',
-              column_count: sec.column_count ?? 1,
-              layout_config: sec.layout_config || {},
-              is_visible: sec.is_visible !== undefined ? sec.is_visible : true,
-            }))
-          : state.sections;
+      const serverSections = isSwitchingForm
+        ? rawServerSections.map((sec) => ({
+            ...sec,
+            layout_type: sec.layout_type || 'SINGLE_COLUMN',
+            column_count: sec.column_count ?? 1,
+            layout_config: sec.layout_config || {},
+            is_visible: sec.is_visible !== undefined ? sec.is_visible : true,
+          }))
+        : rawServerSections.length > 0
+        ? rawServerSections.map((sec) => ({
+            ...sec,
+            layout_type: sec.layout_type || 'SINGLE_COLUMN',
+            column_count: sec.column_count ?? 1,
+            layout_config: sec.layout_config || {},
+            is_visible: sec.is_visible !== undefined ? sec.is_visible : true,
+          }))
+        : state.sections;
 
       // Retain active field if still present, or transition from optimistic ID
-      let newSelectedFieldId = state.selectedFieldId;
-      if (newSelectedFieldId && !serverFields.some((f) => f.id === newSelectedFieldId)) {
+      let newSelectedFieldId = isSwitchingForm ? null : state.selectedFieldId;
+      if (!isSwitchingForm && newSelectedFieldId && !serverFields.some((f) => f.id === newSelectedFieldId)) {
         const oldField = state.fields.find((f) => f.id === newSelectedFieldId);
         const matchedField = oldField
           ? serverFields.find(
@@ -266,8 +330,8 @@ export const useBuilderStore = create<BuilderState>((set) => ({
       }
 
       // Retain active section if still present, or transition from optimistic ID
-      let newSelectedSectionId = state.selectedSectionId;
-      if (newSelectedSectionId && !serverSections.some((s) => s.id === newSelectedSectionId)) {
+      let newSelectedSectionId = isSwitchingForm ? null : state.selectedSectionId;
+      if (!isSwitchingForm && newSelectedSectionId && !serverSections.some((s) => s.id === newSelectedSectionId)) {
         const oldSec = state.sections.find((s) => s.id === newSelectedSectionId);
         const matchedSec = oldSec
           ? serverSections.find(
@@ -286,15 +350,22 @@ export const useBuilderStore = create<BuilderState>((set) => ({
         isTitleEdited: false,
         isDescriptionEdited: false,
         formType: form.form_type || state.formType,
+        initialFormType: form.form_type || state.formType,
         status: form.status || state.status,
+        initialStatus: form.status || state.status,
         slug: form.slug || state.slug,
         sections: serverSections,
         fields: serverFields,
         formSettings: form.form_settings || state.formSettings,
+        initialFormSettings: form.form_settings || state.formSettings,
+        isFormSettingsEdited: false,
         quizSettings: form.quiz_settings || state.quizSettings,
+        initialQuizSettings: form.quiz_settings || state.quizSettings,
+        isQuizSettingsEdited: false,
         selectedFieldId: newSelectedFieldId,
         selectedSectionId: newSelectedSectionId,
-        activeDrawer: state.activeDrawer,
+        editingSectionId: isSwitchingForm ? null : state.editingSectionId,
+        activeDrawer: isSwitchingForm ? null : state.activeDrawer,
         activeBuilderTab: state.activeBuilderTab,
         isDirty: false,
       };
@@ -319,7 +390,7 @@ export const useBuilderStore = create<BuilderState>((set) => ({
       activeDrawer: formType !== 'QUIZ' && state.activeDrawer === 'quiz' ? null : state.activeDrawer,
       isDirty: true,
     })),
-  setStatus: (status) => set({ status, isDirty: true }),
+  setStatus: (status) => set({ status }),
   setActiveBuilderTab: (activeBuilderTab) => set({ activeBuilderTab }),
   setActiveDrawer: (activeDrawer) => set({ activeDrawer }),
   setSelectedFieldId: (selectedFieldId) => set({ selectedFieldId }),
@@ -436,9 +507,35 @@ export const useBuilderStore = create<BuilderState>((set) => ({
             : newSectionId
             ? null
             : (f.form_id || state.formId);
+
+        const finalType = updates.field_type !== undefined ? updates.field_type : f.field_type;
+        const isMultiple =
+          finalType === 'MULTIPLE_CHOICE'
+            ? true
+            : finalType === 'CHECKBOX'
+            ? true
+            : updates.is_multiple !== undefined
+            ? updates.is_multiple
+            : f.is_multiple;
+
+        let values = updates.values !== undefined ? updates.values : f.values;
+        if (!values && updates.settings?.options && Array.isArray(updates.settings.options)) {
+          values = updates.settings.options as string[];
+        }
+
+        const newSettings =
+          updates.settings !== undefined ? { ...f.settings, ...updates.settings } : f.settings;
+        if (values && newSettings) {
+          newSettings.options = values;
+        }
+
         return {
           ...f,
           ...updates,
+          field_type: finalType,
+          is_multiple: isMultiple,
+          values,
+          settings: newSettings,
           section_id: newSectionId || null,
           form_id: newSectionId ? null : newFormId,
           updated_at: new Date().toISOString(),
@@ -795,17 +892,27 @@ export const useBuilderStore = create<BuilderState>((set) => ({
   },
 
   updateFormSettings: (settings) => {
-    set((state) => ({
-      formSettings: { ...state.formSettings, ...settings },
-      isDirty: true,
-    }));
+    set((state) => {
+      const nextSettings = { ...state.formSettings, ...settings };
+      const isEdited = !areFormSettingsEqual(nextSettings, state.initialFormSettings);
+      return {
+        formSettings: nextSettings,
+        isFormSettingsEdited: isEdited,
+        isDirty: true,
+      };
+    });
   },
 
   updateQuizSettings: (settings) => {
-    set((state) => ({
-      quizSettings: { ...state.quizSettings, ...settings },
-      isDirty: true,
-    }));
+    set((state) => {
+      const nextSettings = { ...state.quizSettings, ...settings };
+      const isEdited = !areQuizSettingsEqual(nextSettings, state.initialQuizSettings);
+      return {
+        quizSettings: nextSettings,
+        isQuizSettingsEdited: isEdited,
+        isDirty: true,
+      };
+    });
   },
 
   resetBuilder: () => {
@@ -818,12 +925,18 @@ export const useBuilderStore = create<BuilderState>((set) => ({
       isTitleEdited: false,
       isDescriptionEdited: false,
       formType: 'FORM',
+      initialFormType: 'FORM',
       status: 'DRAFT',
+      initialStatus: 'DRAFT',
       slug: null,
       sections: [],
       fields: [],
       formSettings: DEFAULT_FORM_SETTINGS,
+      initialFormSettings: DEFAULT_FORM_SETTINGS,
+      isFormSettingsEdited: false,
       quizSettings: DEFAULT_QUIZ_SETTINGS,
+      initialQuizSettings: DEFAULT_QUIZ_SETTINGS,
+      isQuizSettingsEdited: false,
       selectedFieldId: null,
       selectedSectionId: null,
       editingSectionId: null,
@@ -838,7 +951,13 @@ export const useBuilderStore = create<BuilderState>((set) => ({
       isDirty: false,
       initialTitle: state.title,
       initialDescription: state.description,
+      initialFormType: state.formType,
+      initialStatus: state.status,
+      initialFormSettings: state.formSettings,
+      initialQuizSettings: state.quizSettings,
       isTitleEdited: false,
       isDescriptionEdited: false,
+      isFormSettingsEdited: false,
+      isQuizSettingsEdited: false,
     })),
 }));

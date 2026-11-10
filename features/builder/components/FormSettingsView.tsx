@@ -1,17 +1,20 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useBuilderStore } from '../store/builderStore';
 import { DEFAULT_FORM_SETTINGS } from '../constants/builder.constants';
-import { useSingleForm, useEditFormMutation } from '@/features/forms/hooks/useForms';
-import type { UpdateSettingsPayload, FormType, FormStatus } from '@/types/api.types';
+import { validateFormSettings, type FormSettingsErrors } from '../utils/settingsValidation';
+import { useSingleForm, useDeleteFormMutation } from '@/features/forms/hooks/useForms';
+import { useConfirmationStore } from '@/store/useConfirmationStore';
+import type { FormType, FormStatus } from '@/types/api.types';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { DateTimePicker } from '@/components/ui/date-time-picker';
-import { Save, CheckCircle2, Shield, Calendar, Loader2, Settings2, Globe, ExternalLink, Copy } from 'lucide-react';
+import { Save, CheckCircle2, Shield, Calendar, Loader2, Settings2, Globe, ExternalLink, Copy, Trash2, Archive, ArchiveRestore } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface FormSettingsViewProps {
@@ -19,23 +22,68 @@ interface FormSettingsViewProps {
 }
 
 export const FormSettingsView: React.FC<FormSettingsViewProps> = ({ onClose }) => {
+  const router = useRouter();
+  const confirm = useConfirmationStore((s) => s.confirm);
+  const { mutateAsync: deleteFormApi, isPending: isDeletingForm } = useDeleteFormMutation();
   const {
     formId,
     title,
-    setTitle,
     description,
-    setDescription,
     formType,
-    setFormType,
     status,
     setStatus,
     slug,
     formSettings,
     updateFormSettings,
+    resetBuilder,
   } = useBuilderStore();
 
-  const { updateSettings, isUpdatingSettings } = useSingleForm(formId);
-  const { mutateAsync: editForm, isPending: isEditing } = useEditFormMutation();
+  const [formTitle, setFormTitle] = useState(title);
+  const [formDescription, setFormDescription] = useState(description);
+  const [formTypeChoice, setFormTypeChoice] = useState<FormType>(formType);
+
+  const handleDeleteForm = async () => {
+    const targetId = formId;
+    const ok = await confirm({
+      title: targetId ? 'Delete this form?' : 'Discard this form?',
+      description: targetId
+        ? `Are you sure you want to permanently delete "${formTitle || title || 'Untitled Form'}"? All question fields, settings, and submitted responses will be permanently removed.`
+        : 'Are you sure you want to discard this new form and return to the forms workspace? Any changes you have made will be lost.',
+      confirmText: targetId ? 'Delete Form' : 'Discard Form',
+      cancelText: 'Cancel',
+      variant: 'destructive',
+      onConfirm: targetId
+        ? async () => {
+            try {
+              await deleteFormApi(targetId);
+              resetBuilder();
+              router.replace('/forms');
+            } catch (err: unknown) {
+              console.error('Failed to delete form:', err);
+              const msg =
+                err && typeof err === 'object' && 'message' in err
+                  ? String((err as { message: unknown }).message)
+                  : 'Failed to delete form. Please try again.';
+              toast.error(msg);
+              throw err; // Keeps confirmation modal open on error
+            }
+          }
+        : undefined,
+    });
+    if (!ok) return;
+
+    if (!targetId) {
+      toast.info('New form discarded');
+    }
+
+    resetBuilder();
+    router.replace('/forms');
+  };
+
+  const { form, editForm, isEditing } = useSingleForm(formId);
+  const [isArchiving, setIsArchiving] = useState(false);
+
+  const publishedVersion = form?.published_version ?? null;
 
   const [confirmationMessage, setConfirmationMessage] = useState(
     formSettings.confirmation_message || DEFAULT_FORM_SETTINGS.confirmation_message || ''
@@ -57,12 +105,87 @@ export const FormSettingsView: React.FC<FormSettingsViewProps> = ({ onClose }) =
   );
   const [startAt, setStartAt] = useState(formSettings.start_at || '');
   const [endAt, setEndAt] = useState(formSettings.end_at || '');
+  const [errors, setErrors] = useState<FormSettingsErrors>({});
 
-  const isSaving = isUpdatingSettings || isEditing;
+  const isSaving = isEditing || isArchiving;
+
+  const handleArchiveToggle = async () => {
+    const isCurrentlyArchived = status === 'ARCHIVED';
+
+    if (!isCurrentlyArchived) {
+      const ok = await confirm({
+        title: 'Archive this form?',
+        description: 'Archiving will pause public submissions for this form. You can unarchive it at any time.',
+        confirmText: 'Archive Form',
+        cancelText: 'Cancel',
+      });
+      if (!ok) return;
+    }
+
+    const nextStatus: FormStatus = isCurrentlyArchived
+      ? (publishedVersion && publishedVersion > 0 ? 'PUBLISHED' : 'DRAFT')
+      : 'ARCHIVED';
+
+    const prevStatus = status;
+    setStatus(nextStatus);
+
+    if (formId) {
+      try {
+        setIsArchiving(true);
+        await editForm({
+          formId,
+          payload: {
+            title: formTitle,
+            description: formDescription,
+            form_type: formTypeChoice,
+            status: nextStatus,
+            confirmation_message: confirmationMessage || null,
+            allow_multiple_submission: allowMultiple,
+            require_login: requireLogin,
+            show_progress_bar: showProgressBar,
+            shuffle_questions: shuffleQuestions,
+            submission_limit: submissionLimit === '' ? null : Number(submissionLimit),
+            start_at: startAt || null,
+            end_at: endAt || null,
+          },
+        });
+        useBuilderStore.setState({
+          status: nextStatus,
+          initialStatus: nextStatus,
+        });
+        toast.success(isCurrentlyArchived ? 'Form unarchived' : 'Form archived successfully');
+      } catch (err) {
+        console.error('Failed to change archive status:', err);
+        setStatus(prevStatus);
+        toast.error('Failed to update form status');
+      } finally {
+        setIsArchiving(false);
+      }
+    } else {
+      toast.info(isCurrentlyArchived ? 'Form unarchived' : 'Form marked as archived');
+    }
+  };
 
   const handleSave = async () => {
-    const payload: UpdateSettingsPayload = {
+    const validation = validateFormSettings({
+      title: formTitle,
+      submission_limit: submissionLimit,
+      start_at: startAt,
+      end_at: endAt,
       confirmation_message: confirmationMessage,
+    });
+
+    if (!validation.isValid) {
+      setErrors(validation.errors);
+      const firstMsg = Object.values(validation.errors)[0];
+      toast.error(firstMsg);
+      return;
+    }
+
+    setErrors({});
+
+    const settingsData = {
+      confirmation_message: confirmationMessage || null,
       allow_multiple_submission: allowMultiple,
       require_login: requireLogin,
       show_progress_bar: showProgressBar,
@@ -72,27 +195,57 @@ export const FormSettingsView: React.FC<FormSettingsViewProps> = ({ onClose }) =
       end_at: endAt || null,
     };
 
-    updateFormSettings(payload);
+    updateFormSettings(settingsData);
 
     if (formId) {
       try {
-        await Promise.all([
-          updateSettings(payload),
-          editForm({
-            formId,
-            payload: {
-              title,
-              description,
-              form_type: formType,
-              status,
-            },
-          }),
-        ]);
+        await editForm({
+          formId,
+          payload: {
+            title: formTitle,
+            description: formDescription,
+            form_type: formTypeChoice,
+            status,
+            ...settingsData,
+          },
+        });
+
+        // Sync builder store and enable draft/publish
+        useBuilderStore.setState({
+          title: formTitle,
+          description: formDescription,
+          formType: formTypeChoice,
+          initialTitle: formTitle,
+          initialDescription: formDescription,
+          initialFormType: formTypeChoice,
+          initialStatus: status,
+          initialFormSettings: settingsData,
+          isTitleEdited: false,
+          isDescriptionEdited: false,
+          isFormSettingsEdited: false,
+          isDirty: true,
+        });
+
         toast.success('Form settings & overview updated');
-      } catch {
-        toast.info('Settings saved in active builder session');
+      } catch (err: unknown) {
+        console.error('Failed to update form:', err);
+        const msg =
+          err && typeof err === 'object' && 'message' in err
+            ? String((err as { message: unknown }).message)
+            : 'Failed to update form settings. Please check your inputs and try again.';
+        toast.error(msg);
+        return; // DO NOT CLOSE SHEET ON ERROR!
       }
     } else {
+      useBuilderStore.setState({
+        title: formTitle,
+        description: formDescription,
+        formType: formTypeChoice,
+        isTitleEdited: formTitle !== useBuilderStore.getState().initialTitle,
+        isDescriptionEdited: formDescription !== useBuilderStore.getState().initialDescription,
+        isFormSettingsEdited: true,
+        isDirty: true,
+      });
       toast.success('Form settings saved locally');
     }
 
@@ -136,11 +289,19 @@ export const FormSettingsView: React.FC<FormSettingsViewProps> = ({ onClose }) =
               </Label>
               <Input
                 id="form-title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                value={formTitle}
+                onChange={(e) => {
+                  setFormTitle(e.target.value);
+                  if (errors.title) setErrors((prev) => ({ ...prev, title: undefined }));
+                  useBuilderStore.getState().setIsDirty(true);
+                }}
                 placeholder="e.g. Customer Satisfaction Survey"
-                className="text-xs"
+                className={`text-xs ${errors.title ? 'border-destructive ring-1 ring-destructive' : ''}`}
+                aria-invalid={Boolean(errors.title)}
               />
+              {errors.title && (
+                <p className="text-[11px] text-destructive font-medium">{errors.title}</p>
+              )}
             </div>
 
             <div className="space-y-1">
@@ -149,8 +310,11 @@ export const FormSettingsView: React.FC<FormSettingsViewProps> = ({ onClose }) =
               </Label>
               <Textarea
                 id="form-desc"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                value={formDescription}
+                onChange={(e) => {
+                  setFormDescription(e.target.value);
+                  useBuilderStore.getState().setIsDirty(true);
+                }}
                 placeholder="Brief summary explaining what this form collects..."
                 rows={3}
                 className="text-xs"
@@ -164,9 +328,12 @@ export const FormSettingsView: React.FC<FormSettingsViewProps> = ({ onClose }) =
                   <button
                     key={type}
                     type="button"
-                    onClick={() => setFormType(type)}
+                    onClick={() => {
+                      setFormTypeChoice(type);
+                      useBuilderStore.getState().setIsDirty(true);
+                    }}
                     className={`cursor-pointer px-2.5 py-1.5 rounded-md text-xs font-medium border text-left transition-all ${
-                      formType === type
+                      formTypeChoice === type
                         ? 'border-primary bg-primary/10 text-primary font-semibold'
                         : 'border-border bg-card hover:bg-accent/50 text-muted-foreground'
                     }`}
@@ -177,24 +344,60 @@ export const FormSettingsView: React.FC<FormSettingsViewProps> = ({ onClose }) =
               </div>
             </div>
 
-            <div className="space-y-1.5 pt-2 border-t border-border">
-              <Label className="text-xs font-medium">Publishing Status</Label>
-              <div className="flex gap-2">
-                {(['DRAFT', 'PUBLISHED', 'ARCHIVED'] as FormStatus[]).map((st) => (
-                  <button
-                    key={st}
+            {/* Archive Action */}
+            <div className="pt-2 border-t border-border">
+              {status !== 'ARCHIVED' ? (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <Label className="text-xs font-medium text-foreground">Archive Form</Label>
+                    <p className="text-[11px] text-muted-foreground">
+                      Stop accepting new responses and move this form to archive.
+                    </p>
+                  </div>
+                  <Button
                     type="button"
-                    onClick={() => setStatus(st)}
-                    className={`cursor-pointer flex-1 py-1 rounded-md text-xs font-mono border transition-all ${
-                      status === st
-                        ? 'border-primary bg-primary/10 text-primary font-bold'
-                        : 'border-border text-muted-foreground hover:bg-accent/50'
-                    }`}
+                    variant="outline"
+                    size="sm"
+                    onClick={handleArchiveToggle}
+                    disabled={isArchiving || isEditing}
+                    className="cursor-pointer gap-1.5 text-xs h-8 px-3 shrink-0 text-muted-foreground hover:text-foreground border-border hover:bg-accent/60"
                   >
-                    {st}
-                  </button>
-                ))}
-              </div>
+                    {isArchiving ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Archive className="size-3.5" />
+                    )}
+                    <span>Archive</span>
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between p-2.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400">
+                  <div className="flex items-center gap-2">
+                    <Archive className="size-3.5 shrink-0" />
+                    <div>
+                      <span className="text-xs font-semibold block">Form is Archived</span>
+                      <p className="text-[10px] text-muted-foreground">
+                        Public submissions are paused.
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleArchiveToggle}
+                    disabled={isArchiving || isEditing}
+                    className="cursor-pointer gap-1.5 text-xs h-7 px-2.5 border-amber-500/30 hover:bg-amber-500/10 shrink-0 font-medium text-amber-700 dark:text-amber-400"
+                  >
+                    {isArchiving ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : (
+                      <ArchiveRestore className="size-3.5" />
+                    )}
+                    <span>Unarchive</span>
+                  </Button>
+                </div>
+              )}
             </div>
 
             {status === 'PUBLISHED' && (slug || formId) && (
@@ -253,10 +456,18 @@ export const FormSettingsView: React.FC<FormSettingsViewProps> = ({ onClose }) =
               id="conf-msg"
               rows={2}
               value={confirmationMessage}
-              onChange={(e) => setConfirmationMessage(e.target.value)}
+              onChange={(e) => {
+                setConfirmationMessage(e.target.value);
+                if (errors.confirmation_message) setErrors((prev) => ({ ...prev, confirmation_message: undefined }));
+                useBuilderStore.getState().setIsDirty(true);
+              }}
               placeholder="Message shown after respondent clicks submit"
-              className="text-xs"
+              className={`text-xs ${errors.confirmation_message ? 'border-destructive ring-1 ring-destructive' : ''}`}
+              aria-invalid={Boolean(errors.confirmation_message)}
             />
+            {errors.confirmation_message && (
+              <p className="text-[11px] text-destructive font-medium">{errors.confirmation_message}</p>
+            )}
           </div>
         </div>
 
@@ -282,7 +493,10 @@ export const FormSettingsView: React.FC<FormSettingsViewProps> = ({ onClose }) =
               <Switch
                 id="allow-multiple"
                 checked={allowMultiple}
-                onCheckedChange={setAllowMultiple}
+                onCheckedChange={(val) => {
+                  setAllowMultiple(val);
+                  useBuilderStore.getState().setIsDirty(true);
+                }}
               />
             </div>
 
@@ -298,7 +512,10 @@ export const FormSettingsView: React.FC<FormSettingsViewProps> = ({ onClose }) =
               <Switch
                 id="require-login"
                 checked={requireLogin}
-                onCheckedChange={setRequireLogin}
+                onCheckedChange={(val) => {
+                  setRequireLogin(val);
+                  useBuilderStore.getState().setIsDirty(true);
+                }}
               />
             </div>
 
@@ -314,7 +531,10 @@ export const FormSettingsView: React.FC<FormSettingsViewProps> = ({ onClose }) =
               <Switch
                 id="progress-bar"
                 checked={showProgressBar}
-                onCheckedChange={setShowProgressBar}
+                onCheckedChange={(val) => {
+                  setShowProgressBar(val);
+                  useBuilderStore.getState().setIsDirty(true);
+                }}
               />
             </div>
 
@@ -330,29 +550,40 @@ export const FormSettingsView: React.FC<FormSettingsViewProps> = ({ onClose }) =
               <Switch
                 id="shuffle-q"
                 checked={shuffleQuestions}
-                onCheckedChange={setShuffleQuestions}
+                onCheckedChange={(val) => {
+                  setShuffleQuestions(val);
+                  useBuilderStore.getState().setIsDirty(true);
+                }}
               />
             </div>
 
-            <div className="flex items-center justify-between py-2.5">
-              <div className="space-y-0.5 pr-2">
-                <Label htmlFor="submission-limit" className="text-xs font-medium">
-                  Total Submission Cap
-                </Label>
-                <p className="text-[10px] text-muted-foreground">
-                  Close form once responses reach this number
-                </p>
+            <div className="flex flex-col py-2.5 gap-1.5">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5 pr-2">
+                  <Label htmlFor="submission-limit" className="text-xs font-medium">
+                    Total Submission Cap
+                  </Label>
+                  <p className="text-[10px] text-muted-foreground">
+                    Close form once responses reach this number
+                  </p>
+                </div>
+                <Input
+                  id="submission-limit"
+                  type="number"
+                  placeholder="Unlimited"
+                  value={submissionLimit}
+                  onChange={(e) => {
+                    setSubmissionLimit(e.target.value === '' ? '' : Number(e.target.value));
+                    if (errors.submission_limit) setErrors((prev) => ({ ...prev, submission_limit: undefined }));
+                    useBuilderStore.getState().setIsDirty(true);
+                  }}
+                  className={`w-28 text-xs ${errors.submission_limit ? 'border-destructive ring-1 ring-destructive' : ''}`}
+                  aria-invalid={Boolean(errors.submission_limit)}
+                />
               </div>
-              <Input
-                id="submission-limit"
-                type="number"
-                placeholder="Unlimited"
-                value={submissionLimit}
-                onChange={(e) =>
-                  setSubmissionLimit(e.target.value === '' ? '' : Number(e.target.value))
-                }
-                className="w-28 text-xs"
-              />
+              {errors.submission_limit && (
+                <p className="text-[11px] text-destructive font-medium self-end">{errors.submission_limit}</p>
+              )}
             </div>
           </div>
         </div>
@@ -374,9 +605,18 @@ export const FormSettingsView: React.FC<FormSettingsViewProps> = ({ onClose }) =
               <DateTimePicker
                 id="start-at"
                 value={startAt || ''}
-                onChange={(iso) => setStartAt(iso)}
+                onChange={(iso) => {
+                  setStartAt(iso);
+                  if (errors.start_at || errors.end_at) {
+                    setErrors((prev) => ({ ...prev, start_at: undefined, end_at: undefined }));
+                  }
+                  useBuilderStore.getState().setIsDirty(true);
+                }}
                 placeholder="Pick start date & time..."
               />
+              {errors.start_at && (
+                <p className="text-[11px] text-destructive font-medium">{errors.start_at}</p>
+              )}
             </div>
 
             <div className="space-y-1">
@@ -386,11 +626,49 @@ export const FormSettingsView: React.FC<FormSettingsViewProps> = ({ onClose }) =
               <DateTimePicker
                 id="end-at"
                 value={endAt || ''}
-                onChange={(iso) => setEndAt(iso)}
+                onChange={(iso) => {
+                  setEndAt(iso);
+                  if (errors.end_at) {
+                    setErrors((prev) => ({ ...prev, end_at: undefined }));
+                  }
+                  useBuilderStore.getState().setIsDirty(true);
+                }}
                 placeholder="Pick close date & time..."
                 minDate={startAt ? new Date(startAt) : undefined}
               />
+              {errors.end_at && (
+                <p className="text-[11px] text-destructive font-medium">{errors.end_at}</p>
+              )}
             </div>
+          </div>
+        </div>
+
+        {/* Danger Zone / Delete Form */}
+        <div className="card-surface p-4 rounded-lg border border-destructive/30 bg-destructive/5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <span className="text-xs font-semibold text-foreground">
+                Delete Form
+              </span>
+              <p className="text-[11px] text-muted-foreground">
+                Permanently delete this form and all its responses. This action cannot be undone.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={handleDeleteForm}
+              disabled={isDeletingForm}
+              className="cursor-pointer text-xs h-8 px-3 shrink-0 gap-1.5"
+            >
+              {isDeletingForm ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="size-3.5" />
+              )}
+              <span>Delete Form</span>
+            </Button>
           </div>
         </div>
       </div>

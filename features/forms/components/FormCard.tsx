@@ -23,19 +23,16 @@ import {
 import { toast } from 'sonner';
 import { useBuilderStore } from '@/features/builder/store/builderStore';
 import { useConfirmationStore } from '@/store/useConfirmationStore';
-import { formsService } from '../services/formsService';
-import { formDetailQueryKey } from '../hooks/useForms';
-import { useQueryClient } from '@tanstack/react-query';
+import type { DeleteFormVariables } from '../hooks/useForms';
 
 interface FormCardProps {
   form: FormResponse;
-  onDelete: (id: string) => void;
+  onDelete: (variables: DeleteFormVariables) => Promise<unknown> | void;
 }
 
 export const FormCard: React.FC<FormCardProps> = ({ form, onDelete }) => {
   const router = useRouter();
-  const queryClient = useQueryClient();
-  const { loadForm, setTitle, setDescription, setFormType, setStatus, setActiveBuilderTab } = useBuilderStore();
+  const { setActiveBuilderTab } = useBuilderStore();
   const confirm = useConfirmationStore((s) => s.confirm);
   const [isCopied, setIsCopied] = useState(false);
 
@@ -49,44 +46,34 @@ export const FormCard: React.FC<FormCardProps> = ({ form, onDelete }) => {
     setTimeout(() => setIsCopied(false), 2000);
   };
 
-  const handleEdit = async (e?: React.MouseEvent) => {
+  const handleEdit = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    try {
-      const fullForm = await queryClient.fetchQuery({
-        queryKey: formDetailQueryKey(form.id),
-        queryFn: () => formsService.getSingleForm(form.id),
-        staleTime: 5 * 60 * 1000,
-      });
-      if (fullForm) {
-        loadForm(fullForm);
-      } else {
-        setTitle(form.title);
-        setDescription(form.description || '');
-        setFormType(form.form_type);
-        setStatus(form.status);
-      }
-    } catch {
-      setTitle(form.title);
-      setDescription(form.description || '');
-      setFormType(form.form_type);
-      setStatus(form.status);
-    }
     setActiveBuilderTab('canvas');
     router.push(`/builder?id=${form.id}`);
   };
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    const ok = await confirm({
+    await confirm({
       title: 'Delete this form?',
       description: `Are you sure you want to permanently delete "${form.title}"? All submitted responses and question elements will be removed immediately.`,
       confirmText: 'Delete Form',
       cancelText: 'Keep Form',
       variant: 'destructive',
+      onConfirm: async () => {
+        try {
+          await onDelete({ id: form.id, status: form.status, form_type: form.form_type });
+        } catch (err: unknown) {
+          console.error('Failed to delete form:', err);
+          const msg =
+            err && typeof err === 'object' && 'message' in err
+              ? String((err as { message: unknown }).message)
+              : 'Failed to delete form. Please try again.';
+          toast.error(msg);
+          throw err; // Keeps modal open on error
+        }
+      },
     });
-    if (ok) {
-      onDelete(form.id);
-    }
   };
 
   const getTypeIcon = () => {

@@ -1,11 +1,10 @@
-import { clientHttp } from '@/lib/api';
+import { clientHttp, createServerFetcher } from '@/lib/api';
 import type {
   FormResponse,
   SingleForm,
   CreateFormPayload,
+  GenerateFormWithAIPayload,
   EditFormPayload,
-  UpdateSettingsPayload,
-  FormSettingsResponse,
   UpdateQuizSettingsPayload,
   QuizSettingsResponse,
   AddSectionPayload,
@@ -20,58 +19,62 @@ import type {
   DraftFormType,
   SubmissionPayload,
   APIResponse,
+  UploadedFileResponse,
+  SubmissionResponse,
+  FormAnalyticsResponse,
+  GetSubmissionsParams,
 } from '@/types/api.types';
+
+export {
+  normalizeFieldsList,
+  normalizePublishedForm,
+  normalizeDraftForm,
+} from '../utils/formNormalization';
+
+/**
+ * Helper to unwrap boolean success from delete API responses
+ */
+const unwrapSuccess = (res: unknown): boolean =>
+  typeof res === 'object' && res !== null && 'success' in res
+    ? Boolean((res as { success: boolean }).success)
+    : Boolean(res);
 
 export const formsService = {
   /**
    * GET /api/v1/form/all - Fetch forms from backend with required page and limit query params
    */
   async getAllForms(params?: GetFormsParams): Promise<PaginatedFormsResponse> {
-    const queryParams: Record<string, unknown> = {
-      page: params?.page ?? 1,
-      limit: params?.limit ?? 12,
-    };
-
-    if (params?.search && params.search.trim()) {
-      queryParams.search = params.search.trim();
-    }
-    if (params?.form_type && params.form_type !== 'ALL') {
-      queryParams.form_type = params.form_type;
-    }
+    const page = params?.page ?? 1;
+    const limit = params?.limit ?? 12;
+    const search = params?.search?.trim() || undefined;
+    const form_type = params?.form_type && params.form_type !== 'ALL' ? params.form_type : undefined;
 
     const raw = await clientHttp.get<PaginatedFormsResponse | FormResponse[]>('/form/all', {
-      params: queryParams,
+      params: { page, limit, search, form_type },
     });
 
     if (Array.isArray(raw)) {
       return {
         items: raw,
         stats: null,
-        page: (queryParams.page as number) || 1,
-        limit: (queryParams.limit as number) || raw.length,
+        page,
+        limit: raw.length || limit,
         total: raw.length,
         total_pages: 1,
       };
     }
 
     const items = Array.isArray(raw?.items) ? raw.items : [];
-    const stats = raw?.stats ?? null;
-    const page = raw?.page ?? (queryParams.page as number) ?? 1;
-    const limit = raw?.limit ?? (queryParams.limit as number) ?? 12;
     const total = raw?.total ?? items.length;
-
-    let total_pages = raw?.total_pages;
-    if (total_pages == null && typeof total === 'number' && limit > 0) {
-      total_pages = Math.ceil(total / limit);
-    }
+    const total_pages = raw?.total_pages ?? (limit > 0 ? Math.ceil(total / limit) : 1);
 
     return {
       items,
-      stats,
-      page,
-      limit,
+      stats: raw?.stats ?? null,
+      page: raw?.page ?? page,
+      limit: raw?.limit ?? limit,
       total,
-      total_pages: total_pages ?? 1,
+      total_pages,
     };
   },
 
@@ -106,8 +109,8 @@ export const formsService = {
   /**
    * GET /api/v1/form/{slug}/form - Fetch published form version by unique slug
    */
-  getPublishedForm(slug: string): Promise<DraftFormType> {
-    return clientHttp.get<DraftFormType>(`/form/${slug}/form`);
+  getPublishedForm(slug: string): Promise<DraftFormType | SingleForm> {
+    return clientHttp.get<DraftFormType | SingleForm>(`/form/${slug}/form`);
   },
 
   /**
@@ -118,6 +121,45 @@ export const formsService = {
   },
 
   /**
+   * POST /api/v1/form/upload - Upload file(s) for submission
+   */
+  async uploadFiles(files: File[]): Promise<UploadedFileResponse[]> {
+    const formData = new FormData();
+    files.forEach((file) => {
+      formData.append('files', file);
+    });
+    return clientHttp.post<UploadedFileResponse[]>('/form/upload', formData);
+  },
+
+  /**
+   * GET /api/v1/analytics/{form_id}/submits - Fetch submitted responses for a form with page, limit, and search
+   */
+  async getFormSubmissions(
+    formId: string,
+    params?: GetSubmissionsParams
+  ): Promise<FormAnalyticsResponse> {
+    const page = params?.page ?? 1;
+    const limit = params?.limit;
+    const search = params?.search?.trim() || undefined;
+
+    const res = await clientHttp.get<FormAnalyticsResponse | SubmissionResponse[]>(
+      `/analytics/${formId}/submits`,
+      { params: { page: params?.page !== undefined ? page : undefined, limit, search } }
+    );
+
+    if (Array.isArray(res)) {
+      return {
+        items: res,
+        page,
+        limit: limit ?? res.length,
+        total: res.length,
+        total_pages: 1,
+      };
+    }
+    return res;
+  },
+
+  /**
    * POST /api/v1/form/create - Create a new form
    */
   createForm(payload: CreateFormPayload): Promise<FormResponse> {
@@ -125,25 +167,39 @@ export const formsService = {
   },
 
   /**
-   * PATCH /api/v1/form/{form_id} - Edit form metadata
+   * POST /api/v1/ai/generate-form - Generate a full form using AI with a natural language prompt
+   */
+  generateFormWithAI(payload: GenerateFormWithAIPayload): Promise<SingleForm> {
+    return clientHttp.post<SingleForm>('/ai/generate-form', payload, {
+      timeout: 120000,
+    });
+  },
+
+  /**
+   * PATCH /api/v1/form/{form_id} - Edit form metadata & settings
    */
   editForm(formId: string, payload: EditFormPayload): Promise<EditFormPayload> {
-    return clientHttp.patch<EditFormPayload>(`/form/${formId}`, payload);
+    return clientHttp.patch<EditFormPayload>(`/form/${formId}`, {
+      title: payload.title ?? null,
+      description: payload.description ?? null,
+      form_type: payload.form_type ?? null,
+      status: payload.status ?? null,
+      confirmation_message: payload.confirmation_message ?? null,
+      allow_multiple_submission: Boolean(payload.allow_multiple_submission ?? true),
+      require_login: Boolean(payload.require_login ?? false),
+      show_progress_bar: Boolean(payload.show_progress_bar ?? true),
+      shuffle_questions: Boolean(payload.shuffle_questions ?? false),
+      submission_limit: payload.submission_limit ?? null,
+      start_at: payload.start_at ?? null,
+      end_at: payload.end_at ?? null,
+    });
   },
 
   /**
    * DELETE /api/v1/form/{form_id} - Delete form
    */
-  async deleteForm(formId: string): Promise<boolean> {
-    const res = await clientHttp.delete<{ success?: boolean } | boolean>(`/form/${formId}`);
-    return typeof res === 'object' && res !== null ? Boolean(res.success) : Boolean(res);
-  },
-
-  /**
-   * PATCH /api/v1/form/{form_id}/settings - Update Form Settings
-   */
-  updateSettings(formId: string, payload: UpdateSettingsPayload): Promise<FormSettingsResponse> {
-    return clientHttp.patch<FormSettingsResponse>(`/form/${formId}/settings`, payload);
+  deleteForm(formId: string): Promise<boolean> {
+    return clientHttp.delete<{ success?: boolean } | boolean>(`/form/${formId}`).then(unwrapSuccess);
   },
 
   /**
@@ -173,9 +229,8 @@ export const formsService = {
   /**
    * DELETE /api/v1/form/section/{section_id} - Delete a section
    */
-  async deleteSection(sectionId: string): Promise<boolean> {
-    const res = await clientHttp.delete<{ success?: boolean } | boolean>(`/form/section/${sectionId}`);
-    return typeof res === 'object' && res !== null ? Boolean(res.success) : Boolean(res);
+  deleteSection(sectionId: string): Promise<boolean> {
+    return clientHttp.delete<{ success?: boolean } | boolean>(`/form/section/${sectionId}`).then(unwrapSuccess);
   },
 
   /**
@@ -195,283 +250,45 @@ export const formsService = {
   /**
    * DELETE /api/v1/form/field/{field_id} - Delete a form field
    */
-  async deleteField(fieldId: string): Promise<boolean> {
-    const res = await clientHttp.delete<{ success?: boolean } | boolean>(`/form/field/${fieldId}`);
-    return typeof res === 'object' && res !== null ? Boolean(res.success) : Boolean(res);
+  deleteField(fieldId: string): Promise<boolean> {
+    return clientHttp.delete<{ success?: boolean } | boolean>(`/form/field/${fieldId}`).then(unwrapSuccess);
   },
 
   /**
    * Server-side fetch for published form by slug with full cookies forwarding (SSR)
    */
-  async getServerPublishedForm(
-    slug: string,
-    cookiesHeader?: string
-  ): Promise<DraftFormType | null> {
-    try {
-      const headers: Record<string, string> = {
-        Accept: 'application/json',
-      };
-
-      if (cookiesHeader) {
-        headers['Cookie'] = cookiesHeader;
-
-        const sessionMatch = cookiesHeader.match(/(?:^|;\s*)(?:x-session-token|session_token)=([^;]+)/);
-        if (sessionMatch) {
-          headers['x-session-token'] = decodeURIComponent(sessionMatch[1]);
-        }
-      }
-
-      const baseUrl =
-        process.env.NEXT_PUBLIC_API_URL ||
-        process.env.API_BASE_URL ||
-        'http://localhost:8000/api/v1';
-
-      const res = await fetch(`${baseUrl}/form/${encodeURIComponent(slug)}/form`, {
-        method: 'GET',
-        headers,
-        cache: 'no-store',
-      });
-
-      if (!res.ok) {
-        return null;
-      }
-
-      const json = await res.json();
-      if (json && typeof json === 'object') {
-        if ('data' in json && json.data) {
-          return json.data as DraftFormType;
-        }
-        return json as DraftFormType;
-      }
-      return null;
-    } catch (err) {
-      console.error(`Failed to fetch published form on server for slug "${slug}":`, err);
-      return null;
-    }
-  },
+  getServerPublishedForm: createServerFetcher<DraftFormType, [slug: string]>(
+    (slug) => `/form/${encodeURIComponent(slug)}/form`
+  ),
 
   /**
    * Server-side fetch for draft form by formId with full cookies forwarding (SSR)
    */
-  async getServerDraftForm(
-    formId: string,
-    cookiesHeader?: string
-  ): Promise<DraftFormType | null> {
-    try {
-      const headers: Record<string, string> = {
-        Accept: 'application/json',
-      };
-
-      if (cookiesHeader) {
-        headers['Cookie'] = cookiesHeader;
-
-        const sessionMatch = cookiesHeader.match(/(?:^|;\s*)(?:x-session-token|session_token)=([^;]+)/);
-        if (sessionMatch) {
-          headers['x-session-token'] = decodeURIComponent(sessionMatch[1]);
-        }
-      }
-
-      const baseUrl =
-        process.env.NEXT_PUBLIC_API_URL ||
-        process.env.API_BASE_URL ||
-        'http://localhost:8000/api/v1';
-
-      const res = await fetch(`${baseUrl}/form/${encodeURIComponent(formId)}/get-draft`, {
-        method: 'GET',
-        headers,
-        cache: 'no-store',
-      });
-
-      if (!res.ok) {
-        return null;
-      }
-
-      const json = await res.json();
-      if (json && typeof json === 'object') {
-        if ('data' in json && json.data) {
-          return json.data as DraftFormType;
-        }
-        return json as DraftFormType;
-      }
-      return null;
-    } catch (err) {
-      console.error(`Failed to fetch draft form on server for formId "${formId}":`, err);
-      return null;
-    }
-  },
+  getServerDraftForm: createServerFetcher<DraftFormType, [formId: string]>(
+    (formId) => `/form/${encodeURIComponent(formId)}/get-draft`
+  ),
 
   /**
    * Server-side fetch for single form by ID with full cookies forwarding (SSR fallback)
    */
-  async getServerFormById(
-    formId: string,
-    cookiesHeader?: string
-  ): Promise<SingleForm | null> {
-    try {
-      const headers: Record<string, string> = {
-        Accept: 'application/json',
-      };
-
-      if (cookiesHeader) {
-        headers['Cookie'] = cookiesHeader;
-
-        const sessionMatch = cookiesHeader.match(/(?:^|;\s*)(?:x-session-token|session_token)=([^;]+)/);
-        if (sessionMatch) {
-          headers['x-session-token'] = decodeURIComponent(sessionMatch[1]);
-        }
-      }
-
-      const baseUrl =
-        process.env.NEXT_PUBLIC_API_URL ||
-        process.env.API_BASE_URL ||
-        'http://localhost:8000/api/v1';
-
-      const res = await fetch(`${baseUrl}/form/${encodeURIComponent(formId)}`, {
-        method: 'GET',
-        headers,
-        cache: 'no-store',
-      });
-
-      if (!res.ok) {
-        return null;
-      }
-
-      const json = await res.json();
-      if (json && typeof json === 'object') {
-        if ('data' in json && json.data) {
-          return json.data as SingleForm;
-        }
-        return json as SingleForm;
-      }
-      return null;
-    } catch (err) {
-      console.error(`Failed to fetch form by ID on server for formId "${formId}":`, err);
-      return null;
-    }
-  },
+  getServerFormById: createServerFetcher<SingleForm, [formId: string]>(
+    (formId) => `/form/${encodeURIComponent(formId)}`
+  ),
 
   /**
-   * Server-side fetch (SSR)
+   * Server-side fetch for all forms with full cookies forwarding (SSR)
    */
   async getServerAllForms(cookiesHeader?: string): Promise<FormResponse[]> {
-    try {
-      const headers: Record<string, string> = {
-        Accept: 'application/json',
-      };
-      if (cookiesHeader) {
-        headers['Cookie'] = cookiesHeader;
-      }
-
-      const baseUrl =
-        process.env.NEXT_PUBLIC_API_URL ||
-        process.env.API_BASE_URL ||
-        'http://localhost:8000/api/v1';
-
-      const res = await fetch(`${baseUrl}/form/all?page=1&limit=50`, {
-        method: 'GET',
-        headers,
-        cache: 'no-store',
-      });
-
-      if (!res.ok) return [];
-
-      const json = await res.json();
-      const raw = json?.data ?? json;
-      if (Array.isArray(raw)) return raw;
-      if (raw && Array.isArray(raw.items)) return raw.items;
-      return [];
-    } catch {
-      return [];
+    const fetcher = createServerFetcher<PaginatedFormsResponse | FormResponse[]>(
+      () => '/form/all?page=1&limit=50',
+      []
+    );
+    const raw = await fetcher(cookiesHeader);
+    if (Array.isArray(raw)) return raw;
+    if (raw && typeof raw === 'object' && 'items' in raw && Array.isArray(raw.items)) {
+      return raw.items;
     }
+    return [];
   },
 };
 
-/**
- * Normalizes backend form versioning data (DraftFormType) or SingleForm response
- * into a standard SingleForm interface.
- */
-export function normalizePublishedForm(
-  data: DraftFormType | SingleForm | null | undefined,
-  slugOrId: string
-): SingleForm | null {
-  if (!data) return null;
-
-  // Direct SingleForm (already contains fields/sections arrays directly at root and no content field)
-  if ('fields' in data && Array.isArray((data as SingleForm).fields) && !('content' in data)) {
-    return data as SingleForm;
-  }
-
-  const draft = data as DraftFormType;
-  const content = (draft.content || {}) as Record<string, unknown>;
-
-  const resolvedSections = (
-    Array.isArray(content.sections) ? content.sections : []
-  ) as SectionResponse[];
-
-  const resolvedFields = (
-    Array.isArray(content.fields) ? content.fields : []
-  ) as FieldsResponse[];
-
-  return {
-    id: draft.form_id || draft.id || slugOrId,
-    created_at: draft.created_at || new Date().toISOString(),
-    updated_at: draft.updated_at || new Date().toISOString(),
-    owner_id: null,
-    guest_session_id: null,
-    title: (content.title as string) || 'Published Form',
-    description: (content.description as string) || null,
-    form_type: ((content.form_type as string) || 'FORM') as SingleForm['form_type'],
-    status: 'PUBLISHED',
-    slug: slugOrId,
-    published_at: draft.published_at,
-    form_settings: (content.form_settings as FormSettingsResponse) || null,
-    quiz_settings: (content.quiz_settings as QuizSettingsResponse) || null,
-    sections: resolvedSections,
-    fields: resolvedFields,
-  };
-}
-
-/**
- * Normalizes backend draft form versioning data (DraftFormType) or SingleForm response
- * into a standard SingleForm interface for draft previews.
- */
-export function normalizeDraftForm(
-  data: DraftFormType | SingleForm | null | undefined,
-  formId?: string
-): SingleForm | null {
-  if (!data) return null;
-
-  // Direct SingleForm (already contains fields/sections arrays directly at root and no content field)
-  if ('fields' in data && Array.isArray((data as SingleForm).fields) && !('content' in data)) {
-    return data as SingleForm;
-  }
-
-  const draft = data as DraftFormType;
-  const content = (draft.content || {}) as Record<string, unknown>;
-
-  const resolvedSections = (
-    Array.isArray(content.sections) ? content.sections : []
-  ) as SectionResponse[];
-
-  const resolvedFields = (
-    Array.isArray(content.fields) ? content.fields : []
-  ) as FieldsResponse[];
-
-  return {
-    id: draft.form_id || draft.id || formId || '',
-    created_at: draft.created_at || new Date().toISOString(),
-    updated_at: draft.updated_at || new Date().toISOString(),
-    owner_id: null,
-    guest_session_id: null,
-    title: (content.title as string) || 'Preview Form',
-    description: (content.description as string) || null,
-    form_type: ((content.form_type as string) || 'FORM') as SingleForm['form_type'],
-    status: draft.published_at ? 'PUBLISHED' : 'DRAFT',
-    slug: formId || null,
-    published_at: draft.published_at || null,
-    form_settings: (content.form_settings as FormSettingsResponse) || null,
-    quiz_settings: (content.quiz_settings as QuizSettingsResponse) || null,
-    sections: resolvedSections,
-    fields: resolvedFields,
-  };
-}

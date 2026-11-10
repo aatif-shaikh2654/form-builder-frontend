@@ -3,6 +3,7 @@
 import React, { Suspense } from 'react';
 import { usePathname } from 'next/navigation';
 import { Header } from '@/components/common/Header';
+import { cn } from 'cn';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -28,10 +29,17 @@ function AppLayoutInner({ children }: AppLayoutProps) {
     );
   }
 
+  const isBuilderPage = pathname.startsWith('/builder');
+
   return (
     <>
       <Header />
-      <main className="flex-1 w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main
+        className={cn(
+          'flex-1 w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6',
+          isBuilderPage ? 'max-w-none' : 'max-w-[1600px]'
+        )}
+      >
         {children}
       </main>
     </>

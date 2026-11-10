@@ -2,24 +2,11 @@
 
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
-import { useBuilderStore } from '@/features/builder/store/builderStore';
-import type { SingleForm, FieldsResponse } from '@/types/api.types';
-import { getSectionGridClass } from '@/features/builder/constants/layout.constants';
+import type {
+  SingleForm,
+} from '@/types/api.types';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from 'cn';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { DatePicker, TimePicker, DateTimePicker } from '@/components/common';
-import { MultiSelect } from '@/components/ui/multi-select';
-import { FileUploadField, type FileMetadata } from '@/components/ui/file-uploader';
 import {
   Eye,
   Monitor,
@@ -27,12 +14,17 @@ import {
   Smartphone,
   ArrowLeft,
   CheckCircle2,
-  Star,
-  UploadCloud,
   RotateCcw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
+import { FormBodyRenderer } from '@/features/forms/components/FormBodyRenderer';
+import { getAllFormFields } from '@/features/forms/utils/formRendererUtils';
+import {
+  validateAllFormFields,
+  validateSingleField,
+} from '@/features/forms/utils/fieldValidation';
+import { computeFieldVisibility } from '@/features/forms/utils/fieldConditions';
 
 export function PreviewSkeleton() {
   return (
@@ -80,38 +72,18 @@ interface PreviewClientProps {
   formIdParam?: string | null;
 }
 
-export function PreviewClient({ initialForm, formIdParam }: PreviewClientProps) {
-  const storeState = useBuilderStore();
-
+export function PreviewClient({ initialForm }: PreviewClientProps) {
   const [device, setDevice] = useState<DeviceMode>('desktop');
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitted, setIsSubmitted] = useState(false);
 
-  // Directly use the server-fetched draft form (initialForm).
-  // Fall back to client builder store only when previewing without an existing server record.
-  const form: SingleForm | null = useMemo(() => {
-    if (initialForm) {
-      return initialForm;
-    }
-    if (storeState.formId) {
-      return {
-        id: storeState.formId,
-        owner_id: null,
-        guest_session_id: null,
-        published_at: null,
-        title: storeState.title,
-        description: storeState.description,
-        form_type: storeState.formType,
-        status: storeState.status,
-        slug: storeState.slug,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        sections: storeState.sections,
-        fields: storeState.fields,
-      };
-    }
-    return null;
-  }, [initialForm, storeState]);
+  // Directly use the server-fetched draft form. NO fallback to builder store, NO extra calls, NO dummy data.
+  const form: SingleForm | null = initialForm ?? null;
+
+  const allFields = useMemo(() => {
+    return getAllFormFields(form?.sections, form?.fields);
+  }, [form?.sections, form?.fields]);
 
   if (!form) {
     return (
@@ -134,47 +106,64 @@ export function PreviewClient({ initialForm, formIdParam }: PreviewClientProps) 
     );
   }
 
-  const allFields = useMemo(() => {
-    const list: FieldsResponse[] = [...(form.fields || [])];
-    (form.sections || []).forEach((sec) => {
-      (sec.fields || []).forEach((f) => {
-        if (!list.some((existing) => existing.id === f.id)) {
-          list.push(f);
-        }
-      });
-    });
-    return list;
-  }, [form.fields, form.sections]);
-
   const handleInputChange = (fieldId: string, val: unknown) => {
-    setAnswers((prev) => ({ ...prev, [fieldId]: val }));
+    const nextAnswers = { ...answers, [fieldId]: val };
+    setAnswers(nextAnswers);
+
+    const nextVisibility = computeFieldVisibility(allFields, nextAnswers);
+
+    setErrors((prev) => {
+      let modified = false;
+      const next = { ...prev };
+
+      // Clear any errors for now-hidden fields
+      for (const errFieldId of Object.keys(next)) {
+        if (nextVisibility[errFieldId] === false) {
+          delete next[errFieldId];
+          modified = true;
+        }
+      }
+
+      // Re-validate current field if it had an error
+      if (next[fieldId]) {
+        const targetField = allFields.find((f) => f.id === fieldId);
+        if (targetField) {
+          const fieldError = validateSingleField(targetField, val);
+          if (!fieldError) {
+            delete next[fieldId];
+            modified = true;
+          } else if (next[fieldId] !== fieldError) {
+            next[fieldId] = fieldError;
+            modified = true;
+          }
+        }
+      }
+
+      return modified ? next : prev;
+    });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validate required fields
-    for (const field of allFields) {
-      if (field.is_required) {
-        const val = answers[field.id];
-        const isEmpty =
-          val === undefined ||
-          val === null ||
-          val === '' ||
-          (Array.isArray(val) && val.length === 0);
-        if (isEmpty) {
-          toast.error(`Please answer the required field: "${field.label || 'Question'}"`);
-          return;
-        }
-      }
+    // Validate all form fields against required state and validation_rules
+    const validation = validateAllFormFields(allFields, answers);
+    if (!validation.isValid) {
+      setErrors(validation.errors);
+      toast.error(
+        validation.firstErrorMessage || 'Please fix the errors in the form before submitting.'
+      );
+      return;
     }
 
+    setErrors({});
     setIsSubmitted(true);
     toast.success('Form response submitted successfully (Preview Mode)!');
   };
 
   const handleReset = () => {
     setAnswers({});
+    setErrors({});
     setIsSubmitted(false);
   };
 
@@ -190,290 +179,55 @@ export function PreviewClient({ initialForm, formIdParam }: PreviewClientProps) 
     }
   };
 
-  const renderField = (field: FieldsResponse) => {
-    return (
-      <div key={field.id} className="space-y-1.5">
-        <div className="flex items-start justify-between gap-2">
-          <Label className="text-xs font-semibold text-foreground">
-            {field.label || 'Untitled Question'}
-            {field.is_required && (
-              <span className="text-destructive ml-1" title="Required">*</span>
-            )}
-          </Label>
-        </div>
-
-        {field.description && (
-          <p className="text-[11px] text-muted-foreground">{field.description}</p>
-        )}
-
-        {/* Field Type Specific Controls */}
-        <div className="pt-1.5">
-          {['SHORT_TEXT', 'EMAIL', 'PHONE', 'URL'].includes(field.field_type) && (
-            <Input
-              type={field.field_type === 'EMAIL' ? 'email' : field.field_type === 'PHONE' ? 'tel' : 'text'}
-              placeholder={field.placeholder || 'Type answer here...'}
-              value={String(answers[field.id] || '')}
-              onChange={(e) => handleInputChange(field.id, e.target.value)}
-              required={field.is_required}
-              className="h-10 text-[13px] py-2 px-3 rounded-md"
-            />
-          )}
-
-          {field.field_type === 'LONG_TEXT' && (
-            <Textarea
-              rows={3}
-              placeholder={field.placeholder || 'Type long answer here...'}
-              value={String(answers[field.id] || '')}
-              onChange={(e) => handleInputChange(field.id, e.target.value)}
-              required={field.is_required}
-              className="text-[13px] py-2 px-3 rounded-md"
-            />
-          )}
-
-          {field.field_type === 'NUMBER' && (
-            <Input
-              type="number"
-              placeholder={field.placeholder || '0'}
-              value={String(answers[field.id] || '')}
-              onChange={(e) => handleInputChange(field.id, e.target.value)}
-              required={field.is_required}
-              className="h-10 text-[13px] py-2 px-3 rounded-md"
-            />
-          )}
-
-          {field.field_type === 'DATE' && (
-            <DatePicker
-              id={field.id}
-              value={String(answers[field.id] || '')}
-              onChange={(val) => handleInputChange(field.id, val)}
-              placeholder={field.placeholder || 'Select date...'}
-            />
-          )}
-
-          {field.field_type === 'TIME' && (
-            <TimePicker
-              id={field.id}
-              value={String(answers[field.id] || '')}
-              onChange={(val) => handleInputChange(field.id, val)}
-              placeholder={field.placeholder || 'Select time...'}
-            />
-          )}
-
-          {field.field_type === 'DATE_TIME' && (
-            <DateTimePicker
-              id={field.id}
-              value={String(answers[field.id] || '')}
-              onChange={(val) => handleInputChange(field.id, val)}
-              placeholder={field.placeholder || 'Select date & time...'}
-            />
-          )}
-
-          {field.field_type === 'DROPDOWN' && (() => {
-            const options =
-              (Array.isArray(field.values) && field.values.length > 0
-                ? field.values
-                : (field.settings?.options as string[])) || ['Option 1', 'Option 2', 'Option 3'];
-
-            if (field.is_multiple) {
-              const selectedList = Array.isArray(answers[field.id])
-                ? (answers[field.id] as string[])
-                : answers[field.id]
-                ? [String(answers[field.id])]
-                : [];
-              return (
-                <div className="pt-1">
-                  <MultiSelect
-                    id={field.id}
-                    options={options}
-                    selected={selectedList}
-                    onChange={(val) => handleInputChange(field.id, val)}
-                    placeholder={field.placeholder || 'Select options...'}
-                  />
-                </div>
-              );
-            }
-
-            return (
-              <div className="pt-1">
-                <Select
-                  value={String(answers[field.id] || '')}
-                  onValueChange={(val) => handleInputChange(field.id, val)}
-                >
-                  <SelectTrigger className="w-full text-[13px] h-10 bg-card">
-                    <SelectValue placeholder={field.placeholder || 'Select an option...'} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {options.map((opt, optIdx) => (
-                      <SelectItem key={optIdx} value={opt} className="text-xs sm:text-sm">
-                        {opt}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            );
-          })()}
-
-          {['SINGLE_CHOICE', 'MULTIPLE_CHOICE', 'CHECKBOX'].includes(field.field_type) && (() => {
-            const options =
-              (Array.isArray(field.values) && field.values.length > 0
-                ? field.values
-                : (field.settings?.options as string[])) || ['Option 1', 'Option 2', 'Option 3'];
-
-            const isMultiple = field.field_type === 'SINGLE_CHOICE' ? false : field.is_multiple !== false;
-            const selectedList: string[] = Array.isArray(answers[field.id])
-              ? (answers[field.id] as string[])
-              : answers[field.id]
-              ? [String(answers[field.id])]
-              : [];
-
-            return (
-              <div className="space-y-1.5 pt-1">
-                {options.map((opt, optIdx) => {
-                  const isChecked = isMultiple
-                    ? selectedList.includes(opt)
-                    : answers[field.id] === opt;
-
-                  return (
-                    <label
-                      key={optIdx}
-                      className={`flex items-center gap-2.5 p-2.5 rounded-md border text-xs cursor-pointer transition-colors ${
-                        isChecked
-                          ? 'border-primary/50 bg-primary/5 text-foreground'
-                          : 'border-border bg-muted/15 hover:bg-muted/30 text-foreground'
-                      }`}
-                    >
-                      <input
-                        type={isMultiple ? 'checkbox' : 'radio'}
-                        name={`field_${field.id}`}
-                        value={opt}
-                        checked={isChecked}
-                        onChange={() => {
-                          if (isMultiple) {
-                            const next = isChecked
-                              ? selectedList.filter((item) => item !== opt)
-                              : [...selectedList, opt];
-                            handleInputChange(field.id, next);
-                          } else {
-                            handleInputChange(field.id, opt);
-                          }
-                        }}
-                        className={`size-3.5 accent-primary cursor-pointer ${isMultiple ? 'rounded-xs' : 'rounded-full'}`}
-                      />
-                      <span className="text-foreground">{opt}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            );
-          })()}
-
-          {field.field_type === 'RATING' && (
-            <div className="flex items-center gap-2 pt-1">
-              {[1, 2, 3, 4, 5].map((star) => (
-                <button
-                  key={star}
-                  type="button"
-                  onClick={() => handleInputChange(field.id, star)}
-                  className="cursor-pointer p-1 rounded-sm hover:scale-110 transition-transform"
-                >
-                  <Star
-                    className={`size-5 ${
-                      Number(answers[field.id] || 0) >= star
-                        ? 'text-amber-500 fill-amber-500'
-                        : 'text-muted-foreground/40'
-                    }`}
-                  />
-                </button>
-              ))}
-            </div>
-          )}
-
-          {field.field_type === 'FILE_UPLOAD' && (
-            <FileUploadField
-              id={field.id}
-              isMultiple={Boolean(field.is_multiple)}
-              value={answers[field.id] as FileMetadata[] | FileMetadata | null}
-              onChange={(val) => handleInputChange(field.id, val)}
-            />
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const sections = form.sections || [];
-  const fields = form.fields || [];
-  const unassignedFields = fields.filter(
-    (f) => !f.section_id || !sections.some((s) => s.id === f.section_id)
-  );
-
-  const rootItems = [
-    ...sections.map((s) => ({
-      type: 'section' as const,
-      id: s.id,
-      position: s.position ?? 0,
-      section: s,
-    })),
-    ...unassignedFields.map((f) => ({
-      type: 'field' as const,
-      id: f.id,
-      position: f.position ?? 0,
-      field: f,
-    })),
-  ].sort((a, b) => {
-    if (a.position !== b.position) return a.position - b.position;
-    return a.type === 'section' ? -1 : 1;
-  });
-
   return (
-    <div className="min-h-screen bg-background space-y-6 pb-16 px-4 sm:px-6 lg:px-8 py-4 max-w-6xl mx-auto">
-      {/* Top Preview Sticky Toolbar */}
-      <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 p-2.5 rounded-md border border-border bg-card/95 backdrop-blur-md shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm bg-primary/10 text-primary border border-primary/20 text-xs font-semibold">
-            <Eye className="size-3.5" />
-            <span>Draft Preview</span>
-          </div>
-
-          <div className="h-4 w-px bg-border" />
-
-          <span className="text-xs font-semibold text-foreground truncate max-w-[200px] sm:max-w-xs">
-            {form.title}
-          </span>
-        </div>
-
-        {/* Device Switcher */}
-        <div className="flex items-center gap-1 p-0.5 rounded-md bg-muted border border-border">
+    <div className="min-h-[calc(100vh-60px)] bg-muted/20 py-6 px-4 space-y-6">
+      {/* Top Device Bar & Navigation */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-2.5 rounded-lg border border-border bg-card max-w-4xl mx-auto shadow-xs">
+        {/* Responsive Device Switcher */}
+        <div className="flex items-center gap-1 bg-muted/50 p-0.5 rounded-md border border-border/60">
           <Button
             type="button"
-            variant={device === 'desktop' ? 'secondary' : 'ghost'}
-            size="icon"
+            variant="ghost"
+            size="sm"
             onClick={() => setDevice('desktop')}
-            className="cursor-pointer size-7 rounded-sm"
-            title="Desktop view"
+            className={`cursor-pointer h-7 px-2.5 text-xs font-medium rounded gap-1.5 transition-all ${
+              device === 'desktop'
+                ? 'bg-card text-foreground shadow-xs font-semibold'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
           >
             <Monitor className="size-3.5" />
+            <span className="hidden sm:inline">Desktop</span>
           </Button>
+
           <Button
             type="button"
-            variant={device === 'tablet' ? 'secondary' : 'ghost'}
-            size="icon"
+            variant="ghost"
+            size="sm"
             onClick={() => setDevice('tablet')}
-            className="cursor-pointer size-7 rounded-sm"
-            title="Tablet view"
+            className={`cursor-pointer h-7 px-2.5 text-xs font-medium rounded gap-1.5 transition-all ${
+              device === 'tablet'
+                ? 'bg-card text-foreground shadow-xs font-semibold'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
           >
             <Tablet className="size-3.5" />
+            <span className="hidden sm:inline">Tablet</span>
           </Button>
+
           <Button
             type="button"
-            variant={device === 'mobile' ? 'secondary' : 'ghost'}
-            size="icon"
+            variant="ghost"
+            size="sm"
             onClick={() => setDevice('mobile')}
-            className="cursor-pointer size-7 rounded-sm"
-            title="Mobile view"
+            className={`cursor-pointer h-7 px-2.5 text-xs font-medium rounded gap-1.5 transition-all ${
+              device === 'mobile'
+                ? 'bg-card text-foreground shadow-xs font-semibold'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
           >
             <Smartphone className="size-3.5" />
+            <span className="hidden sm:inline">Mobile</span>
           </Button>
         </div>
 
@@ -499,7 +253,7 @@ export function PreviewClient({ initialForm, formIdParam }: PreviewClientProps) 
           )}
 
           <Link
-            href={formIdParam ? `/builder?id=${formIdParam}` : form.id ? `/builder?id=${form.id}` : '/builder'}
+            href={form.id ? `/builder?id=${form.id}` : '/builder'}
             className={cn(
               buttonVariants({ size: 'sm' }),
               'cursor-pointer text-xs font-semibold h-7 px-3 rounded-md'
@@ -521,18 +275,36 @@ export function PreviewClient({ initialForm, formIdParam }: PreviewClientProps) 
             <h2 className="font-heading text-xl font-bold text-foreground">
               Response Submitted!
             </h2>
-            <p className="text-xs text-muted-foreground">
-              Thank you for testing your form draft preview. Your responses were simulated and verified in memory.
+            <p className="text-xs text-muted-foreground whitespace-pre-line leading-relaxed">
+              {form.form_settings?.confirmation_message ||
+                'Thank you for testing your form draft preview. Your responses were simulated and verified in memory.'}
             </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleReset}
-              className="cursor-pointer text-xs font-semibold h-8 rounded-md mt-2"
-            >
-              Submit Another Response
-            </Button>
+
+            {form.form_type === 'QUIZ' && form.quiz_settings?.show_score_after_submissions && (
+              <div className="p-4 rounded-xl bg-muted/50 border border-border max-w-sm mx-auto text-center space-y-1">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider font-mono">
+                  Test Simulation Score
+                </span>
+                <div className="text-3xl font-extrabold text-foreground font-heading">
+                  100%
+                </div>
+                <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/10 text-emerald-600">
+                  PASSED (Passing Score: {form.quiz_settings.passing_score}%)
+                </span>
+              </div>
+            )}
+
+            {form.form_settings?.allow_multiple_submission !== false && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleReset}
+                className="cursor-pointer text-xs font-semibold h-8 rounded-md mt-2"
+              >
+                Submit Another Response
+              </Button>
+            )}
           </div>
         ) : (
           <form
@@ -553,69 +325,24 @@ export function PreviewClient({ initialForm, formIdParam }: PreviewClientProps) 
               )}
             </div>
 
-            {/* Questions & Sections List */}
-            {rootItems.length === 0 ? (
-              <div className="p-8 text-center text-xs text-muted-foreground border border-dashed border-border rounded-md">
-                No questions added to this form yet. Open the builder to add fields.
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {rootItems.map((item) => {
-                  if (item.type === 'section') {
-                    const sec = item.section;
-                    if (sec.is_visible === false) return null;
-                    const secFields = fields
-                      .filter((f) => f.section_id === sec.id)
-                      .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-                    if (secFields.length === 0) return null;
+            {/* Questions & Sections Body (Modularized) */}
+            <FormBodyRenderer
+              sections={form.sections}
+              fields={allFields}
+              answers={answers}
+              errors={errors}
+              onInputChange={handleInputChange}
+              device={device}
+            />
 
-                    const gridClass = getSectionGridClass(
-                      sec.layout_type,
-                      sec.column_count || 1,
-                      (sec.layout_config as { gap?: string })?.gap || 'md',
-                      device
-                    );
-
-                    return (
-                      <div key={sec.id} className="space-y-4 pt-4 border-t border-border/70 first:border-t-0 first:pt-0">
-                        <div>
-                          <h2 className="font-heading text-lg font-bold text-foreground">
-                            {sec.title}
-                          </h2>
-                          {sec.description && (
-                            <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                              {sec.description}
-                            </p>
-                          )}
-                        </div>
-
-                        <div className={gridClass}>
-                          {secFields.map((field) => renderField(field))}
-                        </div>
-                      </div>
-                    );
-                  } else {
-                    return (
-                      <div key={item.field.id} className="pt-2 first:pt-0">
-                        {renderField(item.field)}
-                      </div>
-                    );
-                  }
-                })}
-              </div>
-            )}
-
-            {/* Submit Bar */}
-            <div className="pt-4 border-t border-border flex items-center justify-between">
-              <span className="text-[11px] text-muted-foreground">
-                Preview Mode &bull; Responses will not be saved to live database.
-              </span>
-
+            {/* Submit Action */}
+            <div className="pt-4 border-t border-border flex items-center justify-end">
               <Button
                 type="submit"
-                className="cursor-pointer text-sm font-semibold py-3 px-6 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground"
+                size="default"
+                className="cursor-pointer text-xs font-semibold h-9 px-5 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs"
               >
-                Submit Form
+                Submit Response (Test)
               </Button>
             </div>
           </form>
@@ -624,4 +351,3 @@ export function PreviewClient({ initialForm, formIdParam }: PreviewClientProps) 
     </div>
   );
 }
-

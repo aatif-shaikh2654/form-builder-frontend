@@ -74,9 +74,9 @@ export default function NewFormPage() {
 
   const slugPreview = titleInput.trim()
     ? titleInput
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)+/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)+/g, '')
     : 'untitled-form';
 
   const handleNext = (e: React.FormEvent) => {
@@ -107,16 +107,14 @@ export default function NewFormPage() {
 
       toast.success('Form created! Opening builder...');
       router.push(`/builder?id=${created.id}`);
-    } catch {
-      // Local builder fallback
-      initNewForm(selectedType);
-      setTitle(titleInput.trim());
-      setDescription(descInput.trim());
-      setFormType(selectedType);
-      setActiveBuilderTab('canvas');
-
-      toast.info('Form created in local builder');
-      router.push('/builder');
+    } catch (err: unknown) {
+      console.error('Failed to create form:', err);
+      const msg =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as { message: unknown }).message)
+          : 'Failed to create form. Please check your inputs and try again.';
+      toast.error(msg);
+      // DO NOT reset form inputs or redirect away on error!
     }
   };
 
@@ -155,17 +153,15 @@ export default function NewFormPage() {
         {/* Step Progress Indicator */}
         <div className="flex items-center gap-1.5 text-xs font-mono">
           <div
-            className={`size-6 rounded-md flex items-center justify-center font-bold ${
-              step >= 1 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-            }`}
+            className={`size-6 rounded-md flex items-center justify-center font-bold ${step >= 1 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+              }`}
           >
             1
           </div>
           <div className="w-6 h-0.5 bg-border" />
           <div
-            className={`size-6 rounded-md flex items-center justify-center font-bold ${
-              step === 2 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-            }`}
+            className={`size-6 rounded-md flex items-center justify-center font-bold ${step === 2 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+              }`}
           >
             2
           </div>
@@ -193,26 +189,23 @@ export default function NewFormPage() {
                   type="button"
                   key={item.type}
                   onClick={() => setSelectedType(item.type)}
-                  className={`p-4 py-5 rounded-md border transition-all cursor-pointer flex flex-col items-center justify-center text-center gap-3 relative group outline-none ${
-                    isSelected
+                  className={`p-4 py-5 rounded-md border transition-all cursor-pointer flex flex-col items-center justify-center text-center gap-3 relative group outline-none ${isSelected
                       ? 'border-primary bg-primary/10 ring-1 ring-primary'
                       : 'border-border bg-card hover:border-primary/40 hover:bg-muted/40'
-                  }`}
+                    }`}
                 >
                   <div
-                    className={`size-11 rounded-md flex items-center justify-center transition-colors ${
-                      isSelected
+                    className={`size-11 rounded-md flex items-center justify-center transition-colors ${isSelected
                         ? 'bg-primary text-primary-foreground'
                         : 'bg-muted text-muted-foreground group-hover:text-foreground group-hover:bg-muted/80'
-                    }`}
+                      }`}
                   >
                     <Icon className="size-5" />
                   </div>
 
                   <span
-                    className={`font-heading font-semibold text-xs sm:text-sm tracking-tight ${
-                      isSelected ? 'text-primary' : 'text-foreground'
-                    }`}
+                    className={`font-heading font-semibold text-xs sm:text-sm tracking-tight ${isSelected ? 'text-primary' : 'text-foreground'
+                      }`}
                   >
                     {item.label}
                   </span>
@@ -329,7 +322,7 @@ export default function NewFormPage() {
               className="cursor-pointer text-sm font-semibold py-3 px-5 rounded-md border-border"
             >
               <ArrowLeft className="size-4 mr-1.5" />
-              Back to Type Selection
+              Back
             </Button>
 
             <Button

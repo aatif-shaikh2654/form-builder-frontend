@@ -18,7 +18,7 @@ export interface RequestConfig extends AxiosRequestConfig {
 }
 
 // Default backend API URL (FastAPI standard endpoint)
-const BASE_URL =
+export const BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   process.env.API_BASE_URL ||
   'http://localhost:8000/api/v1';
@@ -47,6 +47,14 @@ apiClient.interceptors.request.use((config) => {
       config.headers[SESSION_TOKEN_STORAGE_KEY] = sessionToken;
     }
   }
+
+  // Allow browser/Axios to set multipart/form-data boundary automatically when sending FormData
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    if (config.headers) {
+      delete config.headers['Content-Type'];
+    }
+  }
+
   return config;
 });
 

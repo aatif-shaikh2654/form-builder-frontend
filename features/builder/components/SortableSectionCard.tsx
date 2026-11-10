@@ -366,7 +366,24 @@ export const SortableSectionCard: React.FC<SortableSectionCardProps> = ({
         </div>
 
         {/* Section Header */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 bg-muted/20 border-b border-border/80 rounded-t-lg pr-36">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            if (!isEditingTitle) {
+              setIsCollapsed((prev) => !prev);
+            }
+          }}
+          onKeyDown={(e) => {
+            if (isEditingTitle) return;
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setIsCollapsed((prev) => !prev);
+            }
+          }}
+          className="flex items-center justify-between px-4 sm:px-6 py-3.5 bg-muted/20 border-b border-border/80 rounded-t-lg pr-36 cursor-pointer select-none transition-colors hover:bg-muted/30"
+          title={isCollapsed ? 'Click to expand section' : 'Click to collapse section'}
+        >
           <div className="flex items-center gap-2 flex-1 min-w-0">
             {/* Section Title */}
             <div className="flex-1 min-w-0">
@@ -379,6 +396,7 @@ export const SortableSectionCard: React.FC<SortableSectionCardProps> = ({
                     if (e.key === 'Enter') handleTitleBlur();
                   }}
                   autoFocus
+                  onClick={(e) => e.stopPropagation()}
                   className="h-7 text-xs sm:text-sm font-semibold px-2 py-1 w-full max-w-sm"
                 />
               ) : (
@@ -387,7 +405,7 @@ export const SortableSectionCard: React.FC<SortableSectionCardProps> = ({
                     e.stopPropagation();
                     setIsEditingTitle(true);
                   }}
-                  className="font-heading font-semibold text-xs sm:text-sm text-foreground truncate cursor-pointer hover:text-primary transition-colors"
+                  className="font-heading font-semibold text-xs sm:text-sm text-foreground truncate cursor-pointer hover:text-primary transition-colors inline-block"
                   title="Click to edit section title"
                 >
                   {section.title || `Section ${sectionIndex + 1}`}

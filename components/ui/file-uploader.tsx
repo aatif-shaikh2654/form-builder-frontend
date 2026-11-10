@@ -6,9 +6,15 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 export interface FileMetadata {
+  id?: string;
+  file?: File;
   name: string;
   size: number;
   type: string;
+  original_name?: string;
+  stored_filename?: string;
+  path?: string;
+  mime_type?: string | null;
 }
 
 export interface FileUploadFieldProps {
@@ -56,6 +62,7 @@ export function FileUploadField({
       name: file.name,
       size: file.size,
       type: file.type || 'application/octet-stream',
+      file,
     }));
 
     if (isMultiple) {
@@ -64,7 +71,7 @@ export function FileUploadField({
       const filteredNew = newItems.filter((f) => !existingNames.has(f.name));
       onChange([...filesList, ...filteredNew]);
     } else {
-      onChange(newItems[0] || null);
+      onChange([newItems[0]]);
     }
 
     if (inputRef.current) {
