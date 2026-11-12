@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useUser } from '@/context/UserContext';
 import { UserProfileBadge } from '@/features/user/components/UserProfileBadge';
-import { Sparkles, LayoutGrid } from 'lucide-react';
+import { LayoutGrid } from 'lucide-react';
+import { Logo } from '@/components/common/Logo';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from 'cn';
 
@@ -77,19 +78,7 @@ export const Header: React.FC = () => {
       >
         {/* Brand */}
         <div className="flex items-center gap-8">
-          <Link href="/" className="flex items-center gap-2.5 group cursor-pointer">
-            <div className="size-8 rounded-md bg-primary text-primary-foreground flex items-center justify-center transition-transform group-hover:scale-105">
-              <Sparkles className="size-4" />
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="font-heading font-bold text-base tracking-tight text-foreground group-hover:text-primary transition-colors">
-                FormCraft
-              </span>
-              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-sm bg-muted text-muted-foreground border border-border">
-                Studio
-              </span>
-            </div>
-          </Link>
+          <Logo size="md" />
 
           {/* Minimalist Navigation */}
           <nav className="hidden md:flex items-center gap-2">

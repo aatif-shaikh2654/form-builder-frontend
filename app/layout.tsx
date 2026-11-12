@@ -27,6 +27,14 @@ export const metadata: Metadata = {
   title: "FormCraft Studio | Intelligent Form & Quiz Platform",
   description:
     "Design high-converting interactive multi-step forms, automated scoring quizzes, surveys, and polls in minutes.",
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: "/apple-icon.png",
+  },
 };
 
 export default function RootLayout({

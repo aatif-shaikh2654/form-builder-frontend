@@ -7,8 +7,8 @@ import { useUser } from '@/context/UserContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Logo } from '@/components/common/Logo';
 import {
-  Sparkles,
   Mail,
   Lock,
   Eye,
@@ -66,19 +66,11 @@ function LoginFormContent() {
       <div className="w-full lg:w-1/2 min-h-screen flex flex-col justify-between p-8 sm:p-12 lg:p-16 bg-slate-900 text-white border-0 border-none shadow-none">
         {/* Top Logo & Back Navigation */}
         <div className="flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2.5 group cursor-pointer">
-            <div className="size-9 rounded-md bg-blue-600 text-white flex items-center justify-center transition-transform group-hover:scale-105 border-0">
-              <Sparkles className="size-4.5" />
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="font-heading font-bold text-lg tracking-tight text-white group-hover:text-blue-400 transition-colors">
-                FormCraft
-              </span>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-sm bg-slate-800 text-blue-400 border border-slate-700 font-semibold">
-                Studio
-              </span>
-            </div>
-          </Link>
+          <Logo
+            size="lg"
+            textClassName="text-white group-hover:text-sky-300"
+            badgeClassName="bg-slate-800 text-sky-400 border-slate-700 font-semibold"
+          />
 
           <Link
             href="/"

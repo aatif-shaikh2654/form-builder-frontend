@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { LogoMark } from '@/components/common/Logo';
 import { AiFormGeneratorCard } from '@/features/forms/components/AiFormGeneratorCard';
 import {
   Sparkles,
@@ -413,7 +414,7 @@ export default function HomePage() {
 
         <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
           <Link href="/forms/new">
-            <Button size="lg" className="cursor-pointer gap-2 text-xs font-semibold h-10 px-6 rounded-md bg-blue-600 hover:bg-blue-500 text-white">
+            <Button size="lg" className="cursor-pointer gap-2 text-xs font-semibold h-10 px-6 rounded-md bg-gradient-to-r from-indigo-600 to-sky-600 hover:from-indigo-500 hover:to-sky-500 text-white shadow-sm border-0">
               <Sparkles className="size-3.5" />
               Create Form Now
             </Button>
@@ -429,6 +430,7 @@ export default function HomePage() {
       {/* Footer with Solid Tinted Background */}
       <footer className="pt-6 pb-2 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted-foreground">
         <div className="flex items-center gap-2">
+          <LogoMark size={20} />
           <span className="font-heading font-bold text-foreground">FormCraft Studio</span>
           <span>&copy; 2026 All rights reserved.</span>
         </div>
