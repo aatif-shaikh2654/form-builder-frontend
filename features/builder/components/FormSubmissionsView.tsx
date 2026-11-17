@@ -18,8 +18,6 @@ import {
   List,
   LayoutGrid,
   X,
-  ChevronLeft,
-  ChevronRight,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import {
@@ -31,6 +29,7 @@ import {
   formatDateTimeAnswer,
 } from './submissions';
 import { Skeleton } from '@/components/ui/skeleton';
+import { DataTablePagination } from '@/components/common/DataTablePagination';
 
 export const FormSubmissionsView: React.FC = () => {
   const { formId, title, fields, setActiveBuilderTab } = useBuilderStore();
@@ -364,6 +363,7 @@ export const FormSubmissionsView: React.FC = () => {
           {viewMode === 'cards' ? (
             /* Mobile-Friendly Card Grid View */
             <SubmissionsCardList
+              formId={formId}
               submissions={displaySubmissions}
               dynamicColumns={dynamicColumns}
               onPreviewFile={handleOpenPreview}
@@ -371,75 +371,28 @@ export const FormSubmissionsView: React.FC = () => {
           ) : (
             /* Dynamic Full-Featured Table View taking full width */
             <SubmissionsTable
+              formId={formId}
               submissions={displaySubmissions}
               dynamicColumns={dynamicColumns}
               onPreviewFile={handleOpenPreview}
             />
           )}
 
-          {/* Pagination Controls */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 px-1 text-xs text-muted-foreground border-t border-border">
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5">
-                <span>Rows per page:</span>
-                <select
-                  value={limit}
-                  onChange={(e) => {
-                    setLimit(Number(e.target.value));
-                    setPage(1);
-                  }}
-                  className="h-8 rounded-md border border-input bg-card px-2 py-1 text-xs text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring cursor-pointer"
-                >
-                  <option value={10}>10</option>
-                  <option value={25}>25</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                </select>
-              </div>
-
-              <span className="text-muted-foreground hidden sm:inline">
-                Showing{' '}
-                <strong className="font-semibold text-foreground">
-                  {totalSubmissions === 0 ? 0 : (currentPage - 1) * limit + 1}
-                </strong>{' '}
-                to{' '}
-                <strong className="font-semibold text-foreground">
-                  {Math.min(currentPage * limit, totalSubmissions)}
-                </strong>{' '}
-                of <strong className="font-semibold text-foreground">{totalSubmissions}</strong> entries
-              </span>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage <= 1 || isLoading || isRefetching}
-                className="h-8 px-2.5 text-xs gap-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <ChevronLeft className="size-3.5" />
-                <span>Previous</span>
-              </Button>
-
-              <div className="px-2 font-mono text-xs text-foreground font-medium">
-                Page {currentPage} of {totalPages}
-              </div>
-
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage >= totalPages || isLoading || isRefetching}
-                className="h-8 px-2.5 text-xs gap-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <span>Next</span>
-                <ChevronRight className="size-3.5" />
-              </Button>
-            </div>
-          </div>
+          {/* Reusable Theme-Aware Shadcn DataTable Pagination */}
+          <DataTablePagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={limit}
+            totalItems={totalSubmissions}
+            pageSizeOptions={[10, 25, 50, 100]}
+            onPageChange={(newPage) => setPage(newPage)}
+            onPageSizeChange={(newSize) => {
+              setLimit(newSize);
+              setPage(1);
+            }}
+            isLoading={isLoading || isRefetching}
+            itemLabel="entries"
+          />
         </div>
       )}
 
@@ -450,6 +403,8 @@ export const FormSubmissionsView: React.FC = () => {
         file={previewFile}
         allFiles={previewFilesList}
         onSelectFile={setPreviewFile}
+        formId={formId}
+        submissionId={previewFile?.submission_id || previewFile?.submissionId}
       />
     </div>
   );

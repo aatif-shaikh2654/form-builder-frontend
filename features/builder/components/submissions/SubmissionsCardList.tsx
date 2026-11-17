@@ -9,12 +9,14 @@ import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 
 interface SubmissionsCardListProps {
+  formId?: string | null;
   submissions: SubmissionResponse[];
   dynamicColumns: QuestionColumn[];
   onPreviewFile: (file: FileItemData, allFiles?: FileItemData[]) => void;
 }
 
 export const SubmissionsCardList: React.FC<SubmissionsCardListProps> = memo(({
+  formId,
   submissions,
   dynamicColumns,
   onPreviewFile,
@@ -60,6 +62,8 @@ export const SubmissionsCardList: React.FC<SubmissionsCardListProps> = memo(({
                       <SubmissionCell
                         answer={ans}
                         fieldType={col.field_type}
+                        formId={formId || sub.form_id}
+                        submissionId={sub.id}
                         onPreviewFile={onPreviewFile}
                       />
                     </div>

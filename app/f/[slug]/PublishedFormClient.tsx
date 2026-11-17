@@ -321,7 +321,7 @@ export function PublishedFormClient({ initialForm }: PublishedFormClientProps) {
                 {isUploading ? (
                   <>
                     <Loader2 className="size-3 animate-spin mr-1.5" />
-                    Uploading files...
+                    Uploading files to storage...
                   </>
                 ) : isSubmitting ? (
                   <>

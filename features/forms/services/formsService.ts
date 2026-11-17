@@ -121,7 +121,7 @@ export const formsService = {
   },
 
   /**
-   * POST /api/v1/form/upload - Upload file(s) for submission
+   * POST /api/v1/form/upload - Upload file(s) array
    */
   async uploadFiles(files: File[]): Promise<UploadedFileResponse[]> {
     const formData = new FormData();
@@ -129,6 +129,107 @@ export const formsService = {
       formData.append('files', file);
     });
     return clientHttp.post<UploadedFileResponse[]>('/form/upload', formData);
+  },
+
+  /**
+   * GET /api/v1/form/{form_id}/download-url?storage_key={storage_key}&file_id={file_id}&submission_id={submission_id}
+   * Retrieves the secure view/download URL for an uploaded file
+   */
+  async getFileUploadUrl(
+    formId: string,
+    fileId?: string | null,
+    submissionId?: string | null,
+    storageKey?: string | null
+  ): Promise<string> {
+    const extractUrl = (raw: unknown): string => {
+      if (!raw) return '';
+      if (typeof raw === 'string') return raw;
+      if (typeof raw === 'object') {
+        const obj = raw as Record<string, unknown>;
+        const nested =
+          obj.data && typeof obj.data === 'object'
+            ? (obj.data as Record<string, unknown>)
+            : null;
+
+        const candidate =
+          obj.download_url ||
+          obj.url ||
+          obj.file_url ||
+          obj.presigned_url ||
+          obj.signed_url ||
+          obj.r2_url ||
+          nested?.download_url ||
+          nested?.url ||
+          nested?.file_url ||
+          nested?.presigned_url ||
+          obj.path ||
+          '';
+
+        return candidate ? String(candidate) : '';
+      }
+      return '';
+    };
+
+    const effectiveStorageKey = storageKey || fileId || '';
+    const params: Record<string, string> = {};
+
+    if (effectiveStorageKey) {
+      params.storage_key = effectiveStorageKey;
+    }
+    if (fileId) {
+      params.file_id = fileId;
+    }
+    if (submissionId) {
+      params.submission_id = submissionId;
+    }
+
+    try {
+      const res = await clientHttp.get<
+        string | { url?: string; download_url?: string; file_url?: string; presigned_url?: string; path?: string }
+      >(`/form/${formId}/download-url`, {
+        params,
+        skipErrorToast: true,
+      });
+      const url = extractUrl(res);
+      if (!url) {
+        throw new Error('File not found');
+      }
+      return url;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '';
+      const isFileNotFound = msg.toLowerCase().includes('not found') || msg.toLowerCase().includes('file not found');
+
+      // If the error explicitly indicates "File not found", throw directly without calling fallback
+      if (isFileNotFound) {
+        throw new Error(msg || 'File not found');
+      }
+
+      // Fallback only if the endpoint /download-url itself returned 404 (route not found on backend)
+      const status =
+        (err as { status?: number; response?: { status?: number }; statusCode?: number })?.statusCode ||
+        (err as { status?: number; response?: { status?: number } })?.status ||
+        (err as { response?: { status?: number } })?.response?.status;
+
+      if (status === 404) {
+        try {
+          const fallbackRes = await clientHttp.get<
+            string | { url?: string; download_url?: string; file_url?: string; presigned_url?: string; path?: string }
+          >(`/form/${formId}/upload`, {
+            params,
+            skipErrorToast: true,
+          });
+          const fallbackUrl = extractUrl(fallbackRes);
+          if (fallbackUrl) return fallbackUrl;
+        } catch (fallbackErr: unknown) {
+          const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : '';
+          if (fallbackMsg.toLowerCase().includes('not found')) {
+            throw new Error('File not found');
+          }
+        }
+      }
+
+      throw err;
+    }
   },
 
   /**

@@ -17,12 +17,16 @@ import { extractFilesFromAnswer, formatDateTimeAnswer } from './types';
 interface SubmissionCellProps {
   answer?: SubmissionAnswerResponse;
   fieldType?: string;
+  formId?: string | null;
+  submissionId?: string | null;
   onPreviewFile?: (file: FileItemData, allFiles?: FileItemData[]) => void;
 }
 
 export const SubmissionCell: React.FC<SubmissionCellProps> = memo(({
   answer,
   fieldType,
+  formId,
+  submissionId,
   onPreviewFile,
 }) => {
   if (!answer) {
@@ -33,7 +37,7 @@ export const SubmissionCell: React.FC<SubmissionCellProps> = memo(({
 
   // 1. File Upload Cell with a clean single button that opens the uploads sheet
   if (effectiveFieldType === 'FILE_UPLOAD') {
-    const files = extractFilesFromAnswer(answer);
+    const files = extractFilesFromAnswer(answer, formId, submissionId);
     if (files.length === 0) {
       return answer.answer_text ? (
         <span className="text-xs text-foreground truncate">{answer.answer_text}</span>

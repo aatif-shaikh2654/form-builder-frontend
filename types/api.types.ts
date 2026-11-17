@@ -382,11 +382,24 @@ export interface GetLiveFormResponse {
 
 export interface UploadedFileResponse {
   id: string;
+  file_id?: string;
+  storage_key?: string;
+  storageKey?: string;
+  formId?: string | null;
+  submission_id?: string | null;
+  submissionId?: string | null;
   original_name: string;
   stored_filename: string;
   path: string;
   mime_type: string | null;
   size: number;
+  url?: string;
+}
+
+export interface GetFileUploadUrlResponse {
+  url: string;
+  file_id?: string;
+  expires_in?: number;
 }
 
 export interface AnswerResponse {

@@ -10,12 +10,14 @@ import { Clock } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface SubmissionsTableProps {
+  formId?: string | null;
   submissions: SubmissionResponse[];
   dynamicColumns: QuestionColumn[];
   onPreviewFile: (file: FileItemData, allFiles?: FileItemData[]) => void;
 }
 
 export const SubmissionsTable: React.FC<SubmissionsTableProps> = memo(({
+  formId,
   submissions,
   dynamicColumns,
   onPreviewFile,
@@ -95,6 +97,8 @@ export const SubmissionsTable: React.FC<SubmissionsTableProps> = memo(({
                         <SubmissionCell
                           answer={ans}
                           fieldType={col.field_type}
+                          formId={formId || sub.form_id}
+                          submissionId={sub.id}
                           onPreviewFile={onPreviewFile}
                         />
                       </td>

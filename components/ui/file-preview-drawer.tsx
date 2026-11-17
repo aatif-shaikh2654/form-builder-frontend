@@ -9,15 +9,15 @@ import {
   SheetDescription,
   SheetClose,
 } from '@/components/ui/sheet';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { cn } from 'cn';
 import {
   Download,
   ExternalLink,
   Files,
   Eye,
-  FileIcon,
+  Cloud,
+  Loader2,
 } from 'lucide-react';
 import {
   FileItemData,
@@ -26,9 +26,10 @@ import {
   getFileCategory,
   getFileBadgeVariant,
   getFileIcon,
-  getFileUrl,
+  resolveR2FileUrl,
   FilePreviewDialog,
 } from './file-preview-dialog';
+import { toast } from 'sonner';
 
 export interface FilePreviewDrawerProps {
   open: boolean;
@@ -36,6 +37,8 @@ export interface FilePreviewDrawerProps {
   file: FileItemData | null;
   allFiles?: FileItemData[];
   onSelectFile?: (file: FileItemData) => void;
+  formId?: string | null;
+  submissionId?: string | null;
 }
 
 export const FilePreviewDrawer: React.FC<FilePreviewDrawerProps> = ({
@@ -43,14 +46,110 @@ export const FilePreviewDrawer: React.FC<FilePreviewDrawerProps> = ({
   onOpenChange,
   file,
   allFiles = [],
+  formId,
+  submissionId,
 }) => {
   const [modalPreviewFile, setModalPreviewFile] = React.useState<FileItemData | null>(null);
+  const [activeAction, setActiveAction] = React.useState<{
+    fileId: string;
+    type: 'download' | 'open';
+  } | null>(null);
 
   if (!file && allFiles.length === 0) return null;
 
   const filesToDisplay = allFiles.length > 0 ? allFiles : file ? [file] : [];
   const totalFiles = filesToDisplay.length;
   const totalSize = filesToDisplay.reduce((acc, f) => acc + (f.size || 0), 0);
+
+  const handleDownload = async (item: FileItemData) => {
+    const fileId = item.id || item.file_id;
+    const storageKey =
+      item.storage_key ||
+      item.storageKey ||
+      item.stored_filename ||
+      item.path ||
+      fileId;
+    const effectiveFormId = item.formId || formId;
+    const effectiveSubmissionId = item.submission_id || item.submissionId || submissionId;
+    const itemFileName = item.original_name || item.name || item.stored_filename || 'download';
+
+    if (fileId || storageKey) {
+      setActiveAction({ fileId: fileId || storageKey || '', type: 'download' });
+    }
+
+    try {
+      const url = await resolveR2FileUrl(
+        effectiveFormId,
+        fileId,
+        item.url || item.path,
+        effectiveSubmissionId,
+        storageKey
+      );
+      if (!url) {
+        throw new Error('File not found');
+      }
+
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = itemFileName;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success('Download started');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.toLowerCase().includes('not found')) {
+        toast.error(`"${itemFileName}" was not found.`);
+      } else {
+        toast.error(msg || `Failed to download "${itemFileName}"`);
+      }
+    } finally {
+      setActiveAction(null);
+    }
+  };
+
+  const handleOpenInNewTab = async (item: FileItemData) => {
+    const fileId = item.id || item.file_id;
+    const storageKey =
+      item.storage_key ||
+      item.storageKey ||
+      item.stored_filename ||
+      item.path ||
+      fileId;
+    const effectiveFormId = item.formId || formId;
+    const effectiveSubmissionId = item.submission_id || item.submissionId || submissionId;
+    const itemFileName = item.original_name || item.name || item.stored_filename || 'file';
+
+    if (fileId || storageKey) {
+      setActiveAction({ fileId: fileId || storageKey || '', type: 'open' });
+    }
+
+    try {
+      const url = await resolveR2FileUrl(
+        effectiveFormId,
+        fileId,
+        item.url || item.path,
+        effectiveSubmissionId,
+        storageKey
+      );
+      if (!url) {
+        throw new Error('File not found');
+      }
+
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.toLowerCase().includes('not found')) {
+        toast.error(`"${itemFileName}" was not found.`);
+      } else {
+        toast.error(msg || `Failed to open "${itemFileName}"`);
+      }
+    } finally {
+      setActiveAction(null);
+    }
+  };
 
   return (
     <>
@@ -67,9 +166,11 @@ export const FilePreviewDrawer: React.FC<FilePreviewDrawerProps> = ({
                   <Files className="size-4.5" />
                 </div>
                 <div className="min-w-0">
-                  <SheetTitle className="text-base font-bold text-foreground truncate leading-snug">
-                    {totalFiles > 1 ? `Uploaded Files (${totalFiles})` : 'Uploaded File'}
-                  </SheetTitle>
+                  <div className="flex items-center gap-2">
+                    <SheetTitle className="text-base font-bold text-foreground truncate leading-snug">
+                      {totalFiles > 1 ? `Uploaded Files (${totalFiles})` : 'Uploaded File'}
+                    </SheetTitle>
+                  </div>
                   <SheetDescription className="text-xs text-muted-foreground mt-0.5">
                     {totalFiles} {totalFiles === 1 ? 'file' : 'files'} attached • Total:{' '}
                     {formatBytes(totalSize)}
@@ -89,9 +190,6 @@ export const FilePreviewDrawer: React.FC<FilePreviewDrawerProps> = ({
               <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground font-mono">
                 Attached Files
               </span>
-              <span className="text-[11px] text-muted-foreground font-mono">
-                Click Preview to view
-              </span>
             </div>
 
             <div className="space-y-2.5">
@@ -101,7 +199,12 @@ export const FilePreviewDrawer: React.FC<FilePreviewDrawerProps> = ({
                 const itemExt = getFileExtension(itemFileName);
                 const itemCat = getFileCategory(itemExt);
                 const ItemIcon = getFileIcon(itemCat);
-                const itemUrl = getFileUrl(item.path || item.stored_filename);
+                const itemId = item.id || item.file_id;
+
+                const isDownloading =
+                  activeAction?.fileId === itemId && activeAction?.type === 'download';
+                const isOpening =
+                  activeAction?.fileId === itemId && activeAction?.type === 'open';
 
                 return (
                   <div
@@ -145,36 +248,37 @@ export const FilePreviewDrawer: React.FC<FilePreviewDrawerProps> = ({
                         <span>Preview</span>
                       </Button>
 
-                      {itemUrl && (
-                        <a
-                          href={itemUrl}
-                          download={itemFileName}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={cn(
-                            buttonVariants({ variant: 'outline', size: 'icon-sm' }),
-                            'size-7 text-muted-foreground hover:text-foreground cursor-pointer'
-                          )}
-                          title={`Download ${itemFileName}`}
-                        >
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon-sm"
+                        onClick={() => handleDownload(item)}
+                        disabled={isDownloading || isOpening}
+                        className="size-7 text-muted-foreground hover:text-foreground cursor-pointer"
+                        title={`Download ${itemFileName}`}
+                      >
+                        {isDownloading ? (
+                          <Loader2 className="size-3.5 animate-spin text-primary" />
+                        ) : (
                           <Download className="size-3.5" />
-                        </a>
-                      )}
+                        )}
+                      </Button>
 
-                      {itemUrl && (
-                        <a
-                          href={itemUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={cn(
-                            buttonVariants({ variant: 'ghost', size: 'icon-sm' }),
-                            'size-7 text-muted-foreground hover:text-foreground cursor-pointer'
-                          )}
-                          title={`Open ${itemFileName} in new tab`}
-                        >
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => handleOpenInNewTab(item)}
+                        disabled={isDownloading || isOpening}
+                        className="size-7 text-muted-foreground hover:text-foreground cursor-pointer"
+                        title={`Open ${itemFileName} in new tab`}
+                      >
+                        {isOpening ? (
+                          <Loader2 className="size-3.5 animate-spin text-primary" />
+                        ) : (
                           <ExternalLink className="size-3.5" />
-                        </a>
-                      )}
+                        )}
+                      </Button>
                     </div>
                   </div>
                 );
@@ -184,8 +288,9 @@ export const FilePreviewDrawer: React.FC<FilePreviewDrawerProps> = ({
 
           {/* Drawer Bottom Footer */}
           <div className="p-3 sm:p-4 border-t border-border bg-card flex items-center justify-between gap-2">
-            <span className="text-[11px] text-muted-foreground">
-              {totalFiles} {totalFiles === 1 ? 'file available' : 'files available'}
+            <span className="text-[11px] text-muted-foreground font-mono flex items-center gap-1.5">
+              <Cloud className="size-3 text-primary" />
+              <span>{totalFiles} {totalFiles === 1 ? 'file available' : 'files available'}</span>
             </span>
 
             <SheetClose
@@ -199,11 +304,17 @@ export const FilePreviewDrawer: React.FC<FilePreviewDrawerProps> = ({
         </SheetContent>
       </Sheet>
 
-      {/* Centered Live Preview Modal */}
+      {/* Full Modal Preview (with automatic download URL resolution) */}
       <FilePreviewDialog
         open={Boolean(modalPreviewFile)}
         onOpenChange={(open) => !open && setModalPreviewFile(null)}
         file={modalPreviewFile}
+        formId={modalPreviewFile?.formId || formId}
+        submissionId={
+          modalPreviewFile?.submission_id ||
+          modalPreviewFile?.submissionId ||
+          submissionId
+        }
       />
     </>
   );

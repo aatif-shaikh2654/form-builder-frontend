@@ -10,15 +10,43 @@ export interface QuestionColumn {
   position: number;
 }
 
-export function extractFilesFromAnswer(ans?: SubmissionAnswerResponse): FileItemData[] {
+export function extractFilesFromAnswer(
+  ans?: SubmissionAnswerResponse,
+  formId?: string | null,
+  submissionId?: string | null
+): FileItemData[] {
   if (!ans) return [];
+  const ansWithSubId = ans as unknown as { submission_id?: string; submissionId?: string };
+  const effectiveSubmissionId = submissionId || ansWithSubId.submission_id || ansWithSubId.submissionId;
+  const attach = (f: FileItemData): FileItemData => {
+    const rawObj = f as unknown as Record<string, unknown>;
+    const storageKey =
+      (rawObj.storage_key as string) ||
+      (rawObj.storageKey as string) ||
+      f.stored_filename ||
+      f.path ||
+      f.file_id ||
+      f.id;
+
+    return {
+      ...f,
+      storage_key: storageKey,
+      storageKey: storageKey,
+      formId: f.formId || formId,
+      submission_id: f.submission_id || f.submissionId || effectiveSubmissionId,
+      submissionId: f.submissionId || f.submission_id || effectiveSubmissionId,
+      id: f.id || f.file_id,
+      file_id: f.file_id || f.id,
+    };
+  };
+
   if (Array.isArray(ans.answer_json)) {
-    return ans.answer_json as FileItemData[];
+    return (ans.answer_json as FileItemData[]).map(attach);
   }
   if (ans.answer_json && typeof ans.answer_json === 'object') {
     const obj = ans.answer_json as FileItemData;
-    if (obj.stored_filename || obj.original_name || obj.name) {
-      return [obj];
+    if (obj.stored_filename || obj.original_name || obj.name || obj.id || obj.file_id) {
+      return [attach(obj)];
     }
   }
   return [];
