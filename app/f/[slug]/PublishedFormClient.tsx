@@ -318,15 +318,10 @@ export function PublishedFormClient({ initialForm }: PublishedFormClientProps) {
                 disabled={isSubmitting || isUploading}
                 className="cursor-pointer text-xs font-semibold py-2.5 px-6 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground"
               >
-                {isUploading ? (
+                {isSubmitting || isUploading ? (
                   <>
                     <Loader2 className="size-3 animate-spin mr-1.5" />
-                    Uploading files to storage...
-                  </>
-                ) : isSubmitting ? (
-                  <>
-                    <Loader2 className="size-3 animate-spin mr-1.5" />
-                    Submitting...
+                    Submitting
                   </>
                 ) : (
                   'Submit'

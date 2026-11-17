@@ -132,7 +132,7 @@ export const formsService = {
   },
 
   /**
-   * GET /api/v1/form/{form_id}/download-url?storage_key={storage_key}&file_id={file_id}&submission_id={submission_id}
+   * GET /api/v1/form/{form_id}/download-url?file_id={file_id}&submission_id={submission_id}
    * Retrieves the secure view/download URL for an uploaded file
    */
   async getFileUploadUrl(
@@ -157,7 +157,6 @@ export const formsService = {
           obj.file_url ||
           obj.presigned_url ||
           obj.signed_url ||
-          obj.r2_url ||
           nested?.download_url ||
           nested?.url ||
           nested?.file_url ||
@@ -170,14 +169,11 @@ export const formsService = {
       return '';
     };
 
-    const effectiveStorageKey = storageKey || fileId || '';
+    const effectiveFileId = fileId || storageKey || '';
     const params: Record<string, string> = {};
 
-    if (effectiveStorageKey) {
-      params.storage_key = effectiveStorageKey;
-    }
-    if (fileId) {
-      params.file_id = fileId;
+    if (effectiveFileId) {
+      params.file_id = effectiveFileId;
     }
     if (submissionId) {
       params.submission_id = submissionId;

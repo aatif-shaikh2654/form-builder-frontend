@@ -151,9 +151,9 @@ const fileUrlCache = new Map<string, { url: string; timestamp: number }>();
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
 /**
- * Resolves the actual file download URL by calling GET /api/v1/form/{form_id}/download-url?storage_key={storage_key}&file_id={file_id}&submission_id={submission_id}
+ * Resolves the actual file download URL by calling GET /api/v1/form/{form_id}/download-url?file_id={file_id}&submission_id={submission_id}
  */
-export async function resolveR2FileUrl(
+export async function resolveFileDownloadUrl(
   formId?: string | null,
   fileId?: string | null,
   fallbackUrl?: string | null,
@@ -171,25 +171,23 @@ export async function resolveR2FileUrl(
     return fallbackUrl;
   }
 
-  const effectiveStorageKey =
+  const effectiveFileId =
+    fileId ||
     storageKey ||
-    (fallbackUrl && !fallbackUrl.startsWith('http') ? fallbackUrl : null) ||
-    fileId;
+    (fallbackUrl && !fallbackUrl.startsWith('http') ? fallbackUrl : null);
 
-  if (formId && (fileId || effectiveStorageKey)) {
-    const keyPart = effectiveStorageKey || fileId || '';
-    const cacheKey = `${formId}:${submissionId || ''}:${keyPart}`;
+  if (formId && effectiveFileId) {
+    const cacheKey = `${formId}:${submissionId || ''}:${effectiveFileId}`;
     const cached = fileUrlCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
       return cached.url;
     }
 
-    // Call file download endpoint with formId, fileId, submissionId, and storage_key
+    // Call file download endpoint with formId, file_id, and submission_id
     const url = await formsService.getFileUploadUrl(
       formId,
-      fileId || effectiveStorageKey || '',
-      submissionId,
-      effectiveStorageKey
+      effectiveFileId,
+      submissionId
     );
     if (url) {
       fileUrlCache.set(cacheKey, { url, timestamp: Date.now() });
@@ -199,14 +197,14 @@ export async function resolveR2FileUrl(
   }
 
   // Only if no formId or fileId was provided at all (e.g. offline/mock local development)
-  if (fallbackUrl && !formId && !fileId && !effectiveStorageKey) {
+  if (fallbackUrl && !formId && !effectiveFileId) {
     return getFileUrl(fallbackUrl);
   }
 
   throw new Error('File not found');
 }
 
-export const resolveFileDownloadUrl = resolveR2FileUrl;
+export const resolveR2FileUrl = resolveFileDownloadUrl;
 
 export const FilePreviewDialog: React.FC<FilePreviewDialogProps> = ({
   open,
@@ -223,13 +221,13 @@ export const FilePreviewDialog: React.FC<FilePreviewDialogProps> = ({
   const [imgError, setImgError] = React.useState<boolean>(false);
   const [imgZoomed, setImgZoomed] = React.useState<boolean>(false);
 
-  const fileId = file?.id || file?.file_id;
-  const storageKey =
+  const fileId =
+    file?.file_id ||
+    file?.id ||
     file?.storage_key ||
     file?.storageKey ||
     file?.stored_filename ||
-    file?.path ||
-    fileId;
+    file?.path;
   const effectiveFormId = file?.formId || formId;
   const effectiveSubmissionId = file?.submission_id || file?.submissionId || submissionId;
 
@@ -262,7 +260,7 @@ export const FilePreviewDialog: React.FC<FilePreviewDialogProps> = ({
       return;
     }
 
-    if (!effectiveFormId || (!fileId && !storageKey)) {
+    if (!effectiveFormId || !fileId) {
       if (file.path || file.stored_filename) {
         const fallback = getFileUrl(file.path || file.stored_filename);
         setResolvedUrl(fallback);
@@ -279,12 +277,11 @@ export const FilePreviewDialog: React.FC<FilePreviewDialogProps> = ({
     setIsLoadingUrl(true);
     setUrlError(null);
 
-    resolveR2FileUrl(
+    resolveFileDownloadUrl(
       effectiveFormId,
       fileId,
       file.path || file.stored_filename,
-      effectiveSubmissionId,
-      storageKey
+      effectiveSubmissionId
     )
       .then((url) => {
         if (isMounted) {
@@ -318,7 +315,7 @@ export const FilePreviewDialog: React.FC<FilePreviewDialogProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [open, file, effectiveFormId, fileId, effectiveSubmissionId, storageKey, retryCount]);
+  }, [open, file, effectiveFormId, fileId, effectiveSubmissionId, retryCount]);
 
   if (!file) return null;
 

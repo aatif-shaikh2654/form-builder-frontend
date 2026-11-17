@@ -26,7 +26,7 @@ import {
   getFileCategory,
   getFileBadgeVariant,
   getFileIcon,
-  resolveR2FileUrl,
+  resolveFileDownloadUrl,
   FilePreviewDialog,
 } from './file-preview-dialog';
 import { toast } from 'sonner';
@@ -62,28 +62,27 @@ export const FilePreviewDrawer: React.FC<FilePreviewDrawerProps> = ({
   const totalSize = filesToDisplay.reduce((acc, f) => acc + (f.size || 0), 0);
 
   const handleDownload = async (item: FileItemData) => {
-    const fileId = item.id || item.file_id;
-    const storageKey =
+    const fileId =
+      item.file_id ||
+      item.id ||
       item.storage_key ||
       item.storageKey ||
       item.stored_filename ||
-      item.path ||
-      fileId;
+      item.path;
     const effectiveFormId = item.formId || formId;
     const effectiveSubmissionId = item.submission_id || item.submissionId || submissionId;
     const itemFileName = item.original_name || item.name || item.stored_filename || 'download';
 
-    if (fileId || storageKey) {
-      setActiveAction({ fileId: fileId || storageKey || '', type: 'download' });
+    if (fileId) {
+      setActiveAction({ fileId, type: 'download' });
     }
 
     try {
-      const url = await resolveR2FileUrl(
+      const url = await resolveFileDownloadUrl(
         effectiveFormId,
         fileId,
         item.url || item.path,
-        effectiveSubmissionId,
-        storageKey
+        effectiveSubmissionId
       );
       if (!url) {
         throw new Error('File not found');
@@ -111,28 +110,27 @@ export const FilePreviewDrawer: React.FC<FilePreviewDrawerProps> = ({
   };
 
   const handleOpenInNewTab = async (item: FileItemData) => {
-    const fileId = item.id || item.file_id;
-    const storageKey =
+    const fileId =
+      item.file_id ||
+      item.id ||
       item.storage_key ||
       item.storageKey ||
       item.stored_filename ||
-      item.path ||
-      fileId;
+      item.path;
     const effectiveFormId = item.formId || formId;
     const effectiveSubmissionId = item.submission_id || item.submissionId || submissionId;
     const itemFileName = item.original_name || item.name || item.stored_filename || 'file';
 
-    if (fileId || storageKey) {
-      setActiveAction({ fileId: fileId || storageKey || '', type: 'open' });
+    if (fileId) {
+      setActiveAction({ fileId, type: 'open' });
     }
 
     try {
-      const url = await resolveR2FileUrl(
+      const url = await resolveFileDownloadUrl(
         effectiveFormId,
         fileId,
         item.url || item.path,
-        effectiveSubmissionId,
-        storageKey
+        effectiveSubmissionId
       );
       if (!url) {
         throw new Error('File not found');
