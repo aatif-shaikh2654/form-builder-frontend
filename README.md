@@ -1,36 +1,43 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FormCraft Studio 📝
 
-## Getting Started
+A modern, AI-powered form and quiz builder built with Next.js 16, React 19, and Tailwind CSS. Create dynamic forms from natural language prompts or build them visually using an intuitive drag-and-drop canvas.
 
-First, run the development server:
+---
+
+## 🌐 Live Website
+
+🔗 **[Visit Live Website](https://your-live-url.com)** *(Replace with your deployed URL)*
+
+---
+
+## 📸 Preview
+
+![FormCraft Studio Screenshot](./public/screenshots/preview.png)
+
+---
+
+## 🚀 Key Features
+
+- **AI Form Generation**: Generate complete forms and quizzes from natural language prompts.
+- **Visual Drag & Drop**: Easily rearrange questions and sections using `@dnd-kit`.
+- **Conditional Logic**: Dynamically show or hide fields based on user responses.
+- **Quiz Mode & Auto-Grading**: Configure answer keys, explanations, and passing scores with instant feedback.
+- **File Uploads & Previews**: Upload documents and media with interactive in-browser previews.
+- **Submissions & Analytics**: Review, search, and filter responses in a clean data table with custom pagination.
+
+---
+
+## 🛠️ Quick Start
 
 ```bash
+# 1. Install dependencies
+npm install
+
+# 2. Configure environment
+cp .env.example .env
+
+# 3. Start development server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
